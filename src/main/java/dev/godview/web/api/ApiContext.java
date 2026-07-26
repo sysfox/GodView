@@ -1,5 +1,6 @@
 package dev.godview.web.api;
 
+import dev.godview.alert.AlertEngine;
 import dev.godview.config.GodViewConfig;
 import dev.godview.integration.IntegrationManager;
 import dev.godview.listener.ConsoleCapture;
@@ -21,7 +22,8 @@ import java.util.function.Supplier;
 public record ApiContext(Plugin plugin, MetricsService metrics, Supplier<Storage> storage,
                          WebServer web, Supplier<GodViewConfig> config, EventStream stream,
                          Supplier<ConsoleCapture> console,
-                         Supplier<IntegrationManager> integrations) {
+                         Supplier<IntegrationManager> integrations,
+                         Supplier<AlertEngine> alerts) {
 
     public GodViewConfig cfg() {
         return config.get();
@@ -39,6 +41,11 @@ public record ApiContext(Plugin plugin, MetricsService metrics, Supplier<Storage
     /** Null before the integrations have been detected. */
     public IntegrationManager plugins() {
         return integrations == null ? null : integrations.get();
+    }
+
+    /** Null before the alert engine has been built. */
+    public AlertEngine alertEngine() {
+        return alerts == null ? null : alerts.get();
     }
 
     /** Request body cap, from {@code web.max-body-kb}. */

@@ -61,6 +61,7 @@ public final class EventCapture implements Listener {
     private final Supplier<Storage> storage;
     private final Supplier<EventStream> stream;
     private final Runnable onPluginChange;
+    private volatile java.util.function.Consumer<Storage.Event> eventListener;
 
     private volatile GodViewConfig config;
     private volatile boolean registered;
@@ -75,6 +76,17 @@ public final class EventCapture implements Listener {
     }
 
     // -------------------------------------------------------------- lifecycle
+
+    /**
+     * Receives every captured event, in addition to storage.
+     *
+     * <p>Used by the alert engine. Registered separately rather than passed to the
+     * constructor because the engine is built after capture, and a reload replaces the
+     * engine's rules without replacing this listener.
+     */
+    public void onEvent(java.util.function.Consumer<Storage.Event> listener) {
+        this.eventListener = listener;
+    }
 
     /** Registers exactly the handlers the config asks for. */
     public void register() {
@@ -285,6 +297,16 @@ public final class EventCapture implements Listener {
             JsonWriter w = new JsonWriter(256);
             event.writeJson(w);
             live.publish("event", w.done());
+        }
+
+        java.util.function.Consumer<Storage.Event> listener = eventListener;
+        if (listener != null) {
+            try {
+                listener.accept(event);
+            } catch (Throwable t) {
+                // An alert rule must never break the event that triggered it.
+                plugin.getLogger().warning("An event listener failed: " + t);
+            }
         }
     }
 

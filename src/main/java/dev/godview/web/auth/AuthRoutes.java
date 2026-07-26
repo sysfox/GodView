@@ -41,11 +41,22 @@ public final class AuthRoutes {
     private final WebServer web;
     private final Supplier<Storage> storage;
     private final Supplier<GodViewConfig> config;
+    private volatile java.util.function.Consumer<String> loginFailureListener;
 
     public AuthRoutes(WebServer web, Supplier<Storage> storage, Supplier<GodViewConfig> config) {
         this.web = web;
         this.storage = storage;
         this.config = config;
+    }
+
+    /**
+     * Notified with the client address on every failed sign-in.
+     *
+     * <p>The alert engine uses this for {@code login_failed}. Kept as a callback rather
+     * than a direct dependency because auth comes up before the engine does.
+     */
+    public void onLoginFailure(java.util.function.Consumer<String> listener) {
+        this.loginFailureListener = listener;
     }
 
     public void register(Router router) {
@@ -96,6 +107,15 @@ public final class AuthRoutes {
         if (user == null) {
             boolean nowLocked = web.loginGuard().recordFailure(ip);
             audit(ip, name, "auth.login", nowLocked ? "failed, address locked out" : "failed", false);
+
+            java.util.function.Consumer<String> listener = loginFailureListener;
+            if (listener != null) {
+                try {
+                    listener.accept(ip);
+                } catch (Throwable ignored) {
+                    // An alert rule must not turn a failed login into a 500.
+                }
+            }
 
             JsonWriter w = new JsonWriter(160);
             w.obj()

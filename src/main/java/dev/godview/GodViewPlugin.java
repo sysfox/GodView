@@ -1,5 +1,6 @@
 package dev.godview;
 
+import dev.godview.alert.AlertEngine;
 import dev.godview.command.GodViewCommand;
 import dev.godview.compat.Compat;
 import dev.godview.config.GodViewConfig;
@@ -56,6 +57,8 @@ public final class GodViewPlugin extends JavaPlugin {
     private EventCapture capture;
     private ConsoleCapture console;
     private IntegrationManager integrations;
+    private AlertEngine alerts;
+    private AuthRoutes authRoutes;
     private BukkitTask metricWriteTask;
 
     @Override
@@ -75,9 +78,11 @@ public final class GodViewPlugin extends JavaPlugin {
         metrics.start();
         wireStorage();
 
-        // The web layer comes up before capture so the event stream exists to publish into.
+        // The web layer comes up before capture so the event stream exists to publish into,
+        // and before alerts so the panel channel has somewhere to publish.
         startWeb();
         startCapture();
+        startAlerts();
         registerCommands();
 
         if (web != null && web.users().isEmpty()) {
@@ -92,6 +97,10 @@ public final class GodViewPlugin extends JavaPlugin {
         // what consumes. Doing this the other way round leaves a handler reading from a
         // storage layer that has already shut its connections.
         // Stop producing events before the things they are written into go away.
+        if (alerts != null) {
+            alerts.stop();
+            alerts = null;
+        }
         if (console != null) {
             console.detach();
             console = null;
@@ -134,9 +143,10 @@ public final class GodViewPlugin extends JavaPlugin {
         // is what makes performance.idle-suspend work: no panels open, no collection.
         stream = new EventStream(getLogger(), count -> metrics.setViewers(count));
         ApiContext ctx = new ApiContext(this, metrics, this::storage, server, this::config,
-                stream, this::console, this::integrations);
+                stream, this::console, this::integrations, this::alerts);
 
-        new AuthRoutes(server, this::storage, this::config).register(server.router());
+        authRoutes = new AuthRoutes(server, this::storage, this::config);
+        authRoutes.register(server.router());
         new ApiRoutes(ctx).register(server.router());
         new ActionRoutes(ctx).register(server.router());
         new IntegrationRoutes(ctx).register(server.router());
@@ -171,6 +181,24 @@ public final class GodViewPlugin extends JavaPlugin {
                     config.capture.consoleErrors(), this::stream, capture);
             console.attach();
         }
+    }
+
+    /**
+     * Starts the alert engine and connects it to everything that can trigger a rule.
+     *
+     * <p>Wired last because it consumes from every other layer: samples from metrics,
+     * events from capture, failed sign-ins from auth. All of these are callbacks, so a
+     * reload swaps the engine's rules without having to re-register any of them.
+     */
+    private void startAlerts() {
+        alerts = new AlertEngine(config, this::storage, this::stream, getLogger());
+        alerts.start();
+
+        metrics.addSampleListener(sample -> alerts.onSample(sample));
+        metrics.addSpikeListener(spike -> alerts.onSpike(spike));
+        metrics.addGcListener(event -> alerts.onGc(event));
+        if (capture != null) capture.onEvent(event -> alerts.onEvent(event));
+        if (authRoutes != null) authRoutes.onLoginFailure(ip -> alerts.onLoginFailure(ip));
     }
 
     private void registerCommands() {
@@ -233,6 +261,7 @@ public final class GodViewPlugin extends JavaPlugin {
                     config.capture.consoleErrors(), this::stream, capture);
             console.attach();
         }
+        if (alerts != null) alerts.reload(config);
         return config;
     }
 
@@ -273,5 +302,10 @@ public final class GodViewPlugin extends JavaPlugin {
 
     public IntegrationManager integrations() {
         return integrations;
+    }
+
+    /** Null until the alert engine has started. */
+    public AlertEngine alerts() {
+        return alerts;
     }
 }

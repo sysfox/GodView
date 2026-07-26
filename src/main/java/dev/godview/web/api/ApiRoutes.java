@@ -1,5 +1,7 @@
 package dev.godview.web.api;
 
+import dev.godview.alert.Alert;
+import dev.godview.alert.AlertEngine;
 import dev.godview.compat.Compat;
 import dev.godview.listener.ConsoleCapture;
 import dev.godview.metrics.GcMonitor;
@@ -61,6 +63,11 @@ public final class ApiRoutes {
         router.get("/api/events", Role.Permission.VIEW, this::events);
         router.get("/api/system", Role.Permission.VIEW, this::system);
         router.get("/api/console/log", Role.Permission.VIEW, this::consoleLog);
+        router.get("/api/alerts", Role.Permission.VIEW, this::alerts);
+        router.get("/api/alerts/status", Role.Permission.VIEW, this::alertStatus);
+        // Sending a test notification reaches an external service, so it needs more than
+        // read access even though it changes nothing on the server.
+        router.post("/api/alerts/test/{rule}", Role.Permission.MANAGE_CONFIG, this::alertTest);
         // The audit log records who did what, including failed attempts. That is exactly
         // the sort of thing an ordinary operator account should not be able to browse.
         router.get("/api/audit", Role.Permission.MANAGE_USERS, this::audit);
@@ -318,6 +325,57 @@ public final class ApiRoutes {
             case "DEBUG" -> 1;
             default -> 0;
         };
+    }
+
+    // ------------------------------------------------------------------ alerts
+
+    private void alerts(WebExchange exchange) throws IOException {
+        boolean live = exchange.queryFlag("live", false);
+        AlertEngine engine = ctx.alertEngine();
+
+        JsonWriter w = new JsonWriter(4096);
+        w.obj().name("alerts").arr();
+
+        if (live) {
+            // Straight from memory, for "what just fired".
+            List<Alert> recent = engine == null ? List.of() : engine.recent();
+            int from = Math.max(0, recent.size() - limit(exchange));
+            for (Alert alert : recent.subList(from, recent.size())) alert.writeJson(w);
+        } else {
+            long to = exchange.queryLong("to", System.currentTimeMillis());
+            long from = exchange.queryLong("from", to - DEFAULT_WINDOW_MS * 24);
+            Storage storage = ctx.store();
+            List<Storage.AlertRecord> stored =
+                    storage == null ? List.of() : storage.queryAlerts(from, to, limit(exchange));
+            for (Storage.AlertRecord record : stored) record.writeJson(w);
+        }
+
+        exchange.json(200, w.end().end());
+    }
+
+    private void alertStatus(WebExchange exchange) throws IOException {
+        AlertEngine engine = ctx.alertEngine();
+        if (engine == null) {
+            exchange.json(200, new JsonWriter(96).obj()
+                    .field("enabled", false).name("rules").arr().end().end());
+            return;
+        }
+        JsonWriter w = new JsonWriter(4096);
+        engine.writeStatusJson(w);
+        exchange.json(200, w);
+    }
+
+    private void alertTest(WebExchange exchange) throws IOException {
+        AlertEngine engine = ctx.alertEngine();
+        String rule = exchange.param("rule");
+        if (engine == null || !engine.test(rule)) {
+            exchange.error(404, "rule_not_found", "No alert rule named " + rule + ".");
+            return;
+        }
+        exchange.json(200, new JsonWriter(160).obj()
+                .field("ok", true)
+                .field("message", "Test alert queued for the channels on rule " + rule + ".")
+                .end());
     }
 
     // ------------------------------------------------------------------ system

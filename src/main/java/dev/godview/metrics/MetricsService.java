@@ -59,6 +59,7 @@ public final class MetricsService {
     private final Deque<GcMonitor.GcEvent> recentGc = new ArrayDeque<>();
     private final List<Consumer<Spike>> spikeListeners = new CopyOnWriteArrayList<>();
     private final List<Consumer<GcMonitor.GcEvent>> gcListeners = new CopyOnWriteArrayList<>();
+    private final List<Consumer<Sample>> sampleListeners = new CopyOnWriteArrayList<>();
 
     private final AtomicInteger viewers = new AtomicInteger();
 
@@ -183,6 +184,15 @@ public final class MetricsService {
 
         governor.sample(tps[0]);
         latest = buildSample(now, tps, mspt, playerCount);
+
+        // Fed to the alert engine last, so a rule always sees the sample the panel does.
+        for (Consumer<Sample> listener : sampleListeners) {
+            try {
+                listener.accept(latest);
+            } catch (Throwable t) {
+                plugin.getLogger().warning("A sample listener failed: " + t);
+            }
+        }
     }
 
     private void sampleWorlds() {
@@ -276,6 +286,11 @@ public final class MetricsService {
     /** Notified on a JMX notification thread for every collection. */
     public void addGcListener(Consumer<GcMonitor.GcEvent> listener) {
         gcListeners.add(listener);
+    }
+
+    /** Notified on the main thread once a second, with the sample just published. */
+    public void addSampleListener(Consumer<Sample> listener) {
+        sampleListeners.add(listener);
     }
 
     // ------------------------------------------------------------- read side
