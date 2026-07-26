@@ -44,7 +44,7 @@ jobs:
       # report says which assertion and the log usually says why.
       - name: Upload test reports
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: surefire-reports
           path: target/surefire-reports/
@@ -66,7 +66,7 @@ jobs:
           fi
 
       - name: Upload the jar
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: GodView
           path: target/GodView-*.jar
