@@ -66,9 +66,13 @@ class StorageSuiteTest {
         retention(dir, log);
 
         System.out.println("\n========== Fallback ==========");
-        // A path that cannot be opened must degrade to memory, not throw.
-        Storage fallback = StorageFactory.create(cfg("sqlite", 14),
-                Paths.get("Z:\\definitely\\not\\a\\real\\volume"), log);
+        // A path that cannot be opened must degrade to memory, not throw. A regular file
+        // standing in for the data folder is unopenable on every OS -- creating the
+        // directory for the database fails because the name is already taken by a file.
+        // (A drive letter like Z:\ would only work on Windows; elsewhere backslashes are
+        // ordinary characters and the whole thing is a perfectly legal directory name.)
+        Path notADir = Files.createFile(dir.resolve("not-a-folder"));
+        Storage fallback = StorageFactory.create(cfg("sqlite", 14), notADir, log);
         check("unopenable path falls back", fallback.kind(), "memory");
         fallback.recordEvent(Storage.Event.of(NOW, "join", "Steve", "joined"));
         check("fallback still records", fallback.queryEvents(Storage.EventQuery.recent(10)).size(), 1);
