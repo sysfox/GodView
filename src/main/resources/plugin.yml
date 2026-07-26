@@ -9,7 +9,7 @@ load: POSTWORLD
 # Downloaded by Paper's library loader on first start. Nothing is shaded into
 # the jar; if the download fails GodView falls back to in-memory storage.
 libraries:
-  - org.xerial:sqlite-jdbc:3.46.1.3
+  - org.xerial:sqlite-jdbc:${sqlite.version}
 
 softdepend:
   - LuckPerms

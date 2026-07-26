@@ -3,7 +3,11 @@ package dev.godview;
 import dev.godview.compat.Compat;
 import dev.godview.config.GodViewConfig;
 import dev.godview.metrics.MetricsService;
+import dev.godview.storage.Storage;
+import dev.godview.storage.StorageFactory;
+import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 /**
  * Plugin entry point and the single owner of every long-lived service.
@@ -19,8 +23,18 @@ import org.bukkit.plugin.java.JavaPlugin;
  */
 public final class GodViewPlugin extends JavaPlugin {
 
+    /**
+     * How often a metric row is persisted, in ticks. One second is the right cadence for
+     * the live charts and far too fine for disk: at ten seconds a month of history is a
+     * quarter of a million rows instead of two and a half million, and no chart drawn from
+     * it can tell the difference.
+     */
+    private static final long METRIC_WRITE_TICKS = 200L;
+
     private GodViewConfig config;
     private MetricsService metrics;
+    private Storage storage;
+    private BukkitTask metricWriteTask;
 
     @Override
     public void onEnable() {
@@ -29,16 +43,47 @@ public final class GodViewPlugin extends JavaPlugin {
 
         getLogger().info("Running on " + Compat.describe());
 
+        storage = StorageFactory.create(config.storage, getDataFolder().toPath(), getLogger());
+
         metrics = new MetricsService(this, config);
         metrics.start();
+        wireStorage();
     }
 
     @Override
     public void onDisable() {
+        // Reverse of startup: stop producing before closing what consumes.
+        if (metricWriteTask != null) {
+            metricWriteTask.cancel();
+            metricWriteTask = null;
+        }
         if (metrics != null) {
             metrics.stop();
             metrics = null;
         }
+        if (storage != null) {
+            storage.close();
+            storage = null;
+        }
+    }
+
+    /**
+     * Connects the metrics layer to storage: spikes as they happen, headline numbers on a
+     * slower timer.
+     *
+     * <p>Registered once, on the {@link MetricsService} instance that outlives reloads, so
+     * a reload does not stack duplicate listeners.
+     */
+    private void wireStorage() {
+        metrics.addSpikeListener(spike -> storage.recordSpike(spike));
+
+        metricWriteTask = Bukkit.getScheduler().runTaskTimer(this, () -> {
+            MetricsService.Sample s = metrics.latest();
+            if (s.at() == 0L) return;   // nothing sampled yet
+            storage.recordMetrics(new Storage.MetricPoint(
+                    s.at(), s.tps1(), s.mspt(), s.heapUsed(), s.heapMax(),
+                    s.cpuProcess(), s.players(), s.chunks(), s.entities()));
+        }, METRIC_WRITE_TICKS, METRIC_WRITE_TICKS);
     }
 
     /**
@@ -67,5 +112,9 @@ public final class GodViewPlugin extends JavaPlugin {
 
     public MetricsService metrics() {
         return metrics;
+    }
+
+    public Storage storage() {
+        return storage;
     }
 }
