@@ -6,6 +6,11 @@ import dev.godview.metrics.MetricsService;
 import dev.godview.storage.Storage;
 import dev.godview.storage.StorageFactory;
 import dev.godview.web.WebServer;
+import dev.godview.web.api.ActionRoutes;
+import dev.godview.web.api.ApiContext;
+import dev.godview.web.api.ApiRoutes;
+import dev.godview.web.api.EventStream;
+import dev.godview.web.api.SnapshotPusher;
 import dev.godview.web.auth.AuthRoutes;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -40,6 +45,8 @@ public final class GodViewPlugin extends JavaPlugin {
     private MetricsService metrics;
     private Storage storage;
     private WebServer web;
+    private EventStream stream;
+    private SnapshotPusher pusher;
     private BukkitTask metricWriteTask;
 
     @Override
@@ -63,6 +70,14 @@ public final class GodViewPlugin extends JavaPlugin {
         // Reverse of startup: stop accepting requests, then stop producing, then close
         // what consumes. Doing this the other way round leaves a handler reading from a
         // storage layer that has already shut its connections.
+        if (pusher != null) {
+            pusher.stop();
+            pusher = null;
+        }
+        if (stream != null) {
+            stream.stop();
+            stream = null;
+        }
         if (web != null) {
             web.stop();
             web = null;
@@ -84,11 +99,22 @@ public final class GodViewPlugin extends JavaPlugin {
     private void startWeb() {
         WebServer server = new WebServer(config, getDataFolder().toPath(),
                 getClass().getClassLoader(), getLogger());
+
+        // The stream reports its subscriber count straight into the metrics layer, which
+        // is what makes performance.idle-suspend work: no panels open, no collection.
+        stream = new EventStream(getLogger(), count -> metrics.setViewers(count));
+        ApiContext ctx = new ApiContext(this, metrics, this::storage, server, this::config, stream);
+
         new AuthRoutes(server, this::storage, this::config).register(server.router());
+        new ApiRoutes(ctx).register(server.router());
+        new ActionRoutes(ctx).register(server.router());
 
         try {
             server.start();
             web = server;
+            stream.start();
+            pusher = new SnapshotPusher(ctx);
+            pusher.start();
         } catch (IOException e) {
             // A port clash or an unreadable keystore must not take the plugin down with
             // it — metrics, alerts and the in-game commands all keep working without a
@@ -154,5 +180,10 @@ public final class GodViewPlugin extends JavaPlugin {
     /** Null when the panel is disabled or failed to bind. */
     public WebServer web() {
         return web;
+    }
+
+    /** Null until the panel has started. */
+    public EventStream stream() {
+        return stream;
     }
 }

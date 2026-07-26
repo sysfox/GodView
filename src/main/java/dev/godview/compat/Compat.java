@@ -11,6 +11,9 @@ import org.bukkit.block.BlockState;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.plugin.Plugin;
+
+import dev.godview.util.Text;
 
 import java.lang.reflect.Method;
 import java.util.Date;
@@ -314,6 +317,59 @@ public final class Compat {
     @SuppressWarnings("deprecation")
     public static void kick(Player player, String reason) {
         player.kickPlayer(reason == null ? "" : reason);
+    }
+
+    // ------------------------------------------------------- legacy text APIs
+
+    // Paper is steadily replacing String-based text APIs with Adventure Components. The
+    // replacements do not exist across every version and fork GodView supports, and the
+    // panel wants a plain String at the end of it anyway, so the legacy calls stay — in
+    // one place, suppressed deliberately rather than left to accumulate as noise.
+
+    /** The player's display name with formatting codes removed. */
+    @SuppressWarnings("deprecation")
+    public static String displayName(Player player) {
+        try {
+            return Text.stripColors(player.getDisplayName());
+        } catch (Throwable ignored) {
+            return player.getName();
+        }
+    }
+
+    /** The player's client locale, e.g. {@code "en_us"}, or an empty string. */
+    @SuppressWarnings("deprecation")
+    public static String locale(Player player) {
+        try {
+            return player.getLocale();
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    /** The server MOTD with formatting codes removed. */
+    @SuppressWarnings("deprecation")
+    public static String motd() {
+        try {
+            return Text.stripColors(Bukkit.getMotd());
+        } catch (Throwable ignored) {
+            return "";
+        }
+    }
+
+    /** Sends a message to every online player. Main thread only. */
+    @SuppressWarnings("deprecation")
+    public static void broadcast(String message) {
+        Bukkit.broadcastMessage(message);
+    }
+
+    /** A plugin's declared version. */
+    @SuppressWarnings("deprecation")
+    public static String pluginVersion(Plugin plugin) {
+        try {
+            return plugin.getDescription().getVersion();
+        } catch (Throwable ignored) {
+            return "?";
+        }
     }
 
     // -------------------------------------------------------------------- bans

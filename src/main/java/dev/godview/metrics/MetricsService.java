@@ -65,6 +65,7 @@ public final class MetricsService {
     private volatile GodViewConfig config;
     private volatile PerformanceGovernor governor;
     private volatile List<WorldStats> worlds = List.of();
+    private volatile List<PlayerSnapshot> players = List.of();
     private volatile Sample latest;
     private volatile boolean running;
 
@@ -163,12 +164,16 @@ public final class MetricsService {
         long now = System.currentTimeMillis();
         double[] tps = Compat.tps();
         double mspt = Compat.mspt();
-        int players = Bukkit.getOnlinePlayers().size();
+        // Collected here rather than on demand: the panel polls the player list often, and
+        // hopping an HTTP thread onto the tick loop for every poll would put the web
+        // layer's load straight onto the server. Reading it costs microseconds.
+        players = PlayerSnapshot.collectAll();
+        int playerCount = players.size();
 
         tpsSeries.add(now, Math.min(tps[0], 20d));
         msptSeries.add(now, mspt);
         heapSeries.add(now, SystemProbe.heapPercent());
-        playerSeries.add(now, players);
+        playerSeries.add(now, playerCount);
 
         double cpu = SystemProbe.processCpu();
         if (cpu != SystemProbe.UNAVAILABLE) cpuSeries.add(now, cpu * 100d);
@@ -177,7 +182,7 @@ public final class MetricsService {
         if (gcMonitor != null) gcMonitor.pollDelta();
 
         governor.sample(tps[0]);
-        latest = buildSample(now, tps, mspt, players);
+        latest = buildSample(now, tps, mspt, playerCount);
     }
 
     private void sampleWorlds() {
@@ -285,6 +290,22 @@ public final class MetricsService {
         return worlds;
     }
 
+    /** Online players as of the last one-second pass. Safe to read from any thread. */
+    public List<PlayerSnapshot> players() {
+        return players;
+    }
+
+    /** One player from the cached list, or null when they are not online. */
+    public PlayerSnapshot player(String name) {
+        if (name == null) return null;
+        for (PlayerSnapshot player : players) {
+            if (player.name().equalsIgnoreCase(name) || player.uuid().equalsIgnoreCase(name)) {
+                return player;
+            }
+        }
+        return null;
+    }
+
     /** Newest spikes last. */
     public List<Spike> recentSpikes() {
         synchronized (recentSpikes) {
@@ -338,14 +359,15 @@ public final class MetricsService {
 
     // --------------------------------------------------------- idle suspend
 
-    /** Call when a panel session starts watching. */
-    public int viewerConnected() {
-        return viewers.incrementAndGet();
-    }
-
-    /** Call when a panel session stops watching. */
-    public int viewerDisconnected() {
-        return Math.max(0, viewers.decrementAndGet());
+    /**
+     * Reports how many panels are currently attached to the live stream.
+     *
+     * <p>An absolute count rather than a connect/disconnect pair: the event stream already
+     * knows the true number, and a counter that drifts by one would either suspend
+     * collection while somebody is watching or never suspend it at all.
+     */
+    public void setViewers(int count) {
+        viewers.set(Math.max(0, count));
     }
 
     public int viewers() {
