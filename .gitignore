@@ -17,5 +17,9 @@ out/
 *.db-wal
 users.yml
 
+# The panel's build inputs, not its outputs -- the jar carries the built files.
+node_modules/
+panel/dist/
+
 .DS_Store
 Thumbs.db

@@ -2,6 +2,7 @@ package dev.godview.web.api;
 
 import dev.godview.compat.Compat;
 import dev.godview.metrics.MetricsService;
+import dev.godview.metrics.TickSampler;
 import dev.godview.metrics.PlayerSnapshot;
 import dev.godview.metrics.WorldStats;
 import dev.godview.storage.Storage;
@@ -20,6 +21,9 @@ import org.bukkit.Bukkit;
  * {@code GET /api/players}, which can check the caller's permission.
  */
 public final class Snapshots {
+
+    /** Ticks sent with a full snapshot — ten seconds, matching the sampler's own history. */
+    private static final int RIBBON_TICKS = 200;
 
     private Snapshots() {
     }
@@ -54,6 +58,10 @@ public final class Snapshots {
         for (PlayerSnapshot player : metrics.players()) player.writeJson(w, false);
         w.end();
 
+        // A wider window than a pulse carries, so a freshly opened panel draws a full
+        // ribbon instead of filling in one second at a time.
+        writeTicks(w, metrics, RIBBON_TICKS);
+
         w.name("performance").obj()
                 .field("profile", metrics.profile().lower())
                 .field("auto", metrics.governor().isAuto())
@@ -80,7 +88,7 @@ public final class Snapshots {
         MetricsService metrics = ctx.metrics();
         MetricsService.Sample sample = metrics.latest();
 
-        JsonWriter w = new JsonWriter(512);
+        JsonWriter w = new JsonWriter(768);
         w.obj()
                 .field("at", sample.at())
                 .field("tps1", sample.tps1())
@@ -94,9 +102,39 @@ public final class Snapshots {
                 .field("entities", sample.entities())
                 .field("tickPeriodP95", sample.tickPeriodP95())
                 .field("overrunRatio", sample.overrunRatio())
-                .field("profile", sample.profile())
-                .end();
+                .field("profile", sample.profile());
+
+        // Exactly the ticks that elapsed since the previous pulse, so the panel can append
+        // them to its ribbon without gaps or repeats. Rounded to whole milliseconds: the
+        // ribbon is a bar chart a few pixels tall and sub-millisecond precision would be
+        // three times the bytes for something nobody can see.
+        writeTicks(w, metrics, pulseIntervalTicks(ctx));
+
+        w.end();
         return w.done();
+    }
+
+    /**
+     * How many ticks one pulse covers.
+     *
+     * <p>Derived from the same interval the pusher runs at, including the performance
+     * profile's scaling, so the count always matches the ticks that actually elapsed.
+     */
+    private static int pulseIntervalTicks(ApiContext ctx) {
+        return ctx.metrics().profile()
+                .scaleInterval(ctx.cfg().performance.snapshotIntervalTicks());
+    }
+
+    private static void writeTicks(JsonWriter w, MetricsService metrics, int count) {
+        TickSampler sampler = metrics.tickSampler();
+        if (sampler == null) {
+            w.name("ticks").arr().end();
+            return;
+        }
+        double[] periods = sampler.periods().tail(Math.max(1, count));
+        int[] rounded = new int[periods.length];
+        for (int i = 0; i < periods.length; i++) rounded[i] = (int) Math.round(periods[i]);
+        w.field("ticks", rounded);
     }
 
     private static int safeMaxPlayers() {

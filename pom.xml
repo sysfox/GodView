@@ -17,6 +17,14 @@
     <!-- Downloaded by Paper's library loader at runtime, never shaded. Declared here so
          plugin.yml can be filtered from one place and so tests get the real driver. -->
     <sqlite.version>3.46.1.3</sqlite.version>
+
+    <!-- The panel is a Vue app under panel/, built into the jar by the frontend
+         plugin below. Node is downloaded into target/ rather than taken from the
+         machine, so the same jar comes out of any checkout and CI needs nothing
+         installed. Skip it with -Dgodview.panel.skip=true when working on the
+         Java side; the server then serves its API-only placeholder page. -->
+    <node.version>v22.11.0</node.version>
+    <godview.panel.skip>false</godview.panel.skip>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
   </properties>
@@ -153,6 +161,49 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-clean-plugin</artifactId>
         <version>3.3.2</version>
+      </plugin>
+
+      <!-- Builds the Vue panel straight into target/classes/web, so `mvn package`
+           produces one jar with the server and its console in it. Vite is
+           configured to emit no inline scripts: GodView serves the panel under a
+           CSP without 'unsafe-inline', and a bundler that inlined its bootstrap
+           would produce a blank page that works perfectly in `npm run dev`. -->
+      <plugin>
+        <groupId>com.github.eirslett</groupId>
+        <artifactId>frontend-maven-plugin</artifactId>
+        <version>1.15.1</version>
+        <configuration>
+          <workingDirectory>panel</workingDirectory>
+          <installDirectory>${project.build.directory}</installDirectory>
+          <skip>${godview.panel.skip}</skip>
+        </configuration>
+        <executions>
+          <execution>
+            <id>install-node</id>
+            <goals><goal>install-node-and-npm</goal></goals>
+            <configuration>
+              <nodeVersion>${node.version}</nodeVersion>
+            </configuration>
+          </execution>
+          <execution>
+            <id>panel-dependencies</id>
+            <goals><goal>npm</goal></goals>
+            <configuration>
+              <!-- ci, not install: the lockfile is the build input, and a
+                   dependency quietly floating to a new minor between two builds
+                   of the same commit is not something a plugin jar should do. -->
+              <arguments>ci --no-audit --no-fund</arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>panel-build</id>
+            <phase>prepare-package</phase>
+            <goals><goal>npm</goal></goals>
+            <configuration>
+              <arguments>run build</arguments>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
