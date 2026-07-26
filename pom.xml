@@ -87,11 +87,18 @@
       <scope>provided</scope>
     </dependency>
 
-    <!-- Already on the server classpath; used for the live console tail. -->
+    <!-- Already on the server classpath; used for the live console tail.
+
+         The version must track the log4j-api that paper-api pulls in. Mixing a newer core
+         with an older api breaks at class-load time (Configurator against a moved
+         StackLocatorUtil signature, for one), which does not show up in a plain compile
+         and only surfaces when something actually attaches an appender. Only stable
+         AbstractAppender/LogEvent APIs are used, so this links fine against the newer
+         log4j a real server ships. -->
     <dependency>
       <groupId>org.apache.logging.log4j</groupId>
       <artifactId>log4j-core</artifactId>
-      <version>2.19.0</version>
+      <version>2.17.1</version>
       <scope>provided</scope>
     </dependency>
   </dependencies>

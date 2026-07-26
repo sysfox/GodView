@@ -1,7 +1,10 @@
 package dev.godview;
 
+import dev.godview.command.GodViewCommand;
 import dev.godview.compat.Compat;
 import dev.godview.config.GodViewConfig;
+import dev.godview.listener.ConsoleCapture;
+import dev.godview.listener.EventCapture;
 import dev.godview.metrics.MetricsService;
 import dev.godview.storage.Storage;
 import dev.godview.storage.StorageFactory;
@@ -13,6 +16,7 @@ import dev.godview.web.api.EventStream;
 import dev.godview.web.api.SnapshotPusher;
 import dev.godview.web.auth.AuthRoutes;
 import org.bukkit.Bukkit;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
@@ -47,6 +51,8 @@ public final class GodViewPlugin extends JavaPlugin {
     private WebServer web;
     private EventStream stream;
     private SnapshotPusher pusher;
+    private EventCapture capture;
+    private ConsoleCapture console;
     private BukkitTask metricWriteTask;
 
     @Override
@@ -62,7 +68,15 @@ public final class GodViewPlugin extends JavaPlugin {
         metrics.start();
         wireStorage();
 
+        // The web layer comes up before capture so the event stream exists to publish into.
         startWeb();
+        startCapture();
+        registerCommands();
+
+        if (web != null && web.users().isEmpty()) {
+            getLogger().warning("No panel account exists yet. Run this in the console or in game:");
+            getLogger().warning("  /godview user add <name> admin");
+        }
     }
 
     @Override
@@ -70,6 +84,15 @@ public final class GodViewPlugin extends JavaPlugin {
         // Reverse of startup: stop accepting requests, then stop producing, then close
         // what consumes. Doing this the other way round leaves a handler reading from a
         // storage layer that has already shut its connections.
+        // Stop producing events before the things they are written into go away.
+        if (console != null) {
+            console.detach();
+            console = null;
+        }
+        if (capture != null) {
+            capture.unregister();
+            capture = null;
+        }
         if (pusher != null) {
             pusher.stop();
             pusher = null;
@@ -103,7 +126,8 @@ public final class GodViewPlugin extends JavaPlugin {
         // The stream reports its subscriber count straight into the metrics layer, which
         // is what makes performance.idle-suspend work: no panels open, no collection.
         stream = new EventStream(getLogger(), count -> metrics.setViewers(count));
-        ApiContext ctx = new ApiContext(this, metrics, this::storage, server, this::config, stream);
+        ApiContext ctx = new ApiContext(this, metrics, this::storage, server, this::config,
+                stream, this::console);
 
         new AuthRoutes(server, this::storage, this::config).register(server.router());
         new ApiRoutes(ctx).register(server.router());
@@ -123,6 +147,35 @@ public final class GodViewPlugin extends JavaPlugin {
                     + config.web.bind() + ":" + config.web.port()
                     + " — the panel is unavailable, everything else keeps running.", e);
         }
+    }
+
+    private void startCapture() {
+        capture = new EventCapture(this, config, this::storage, this::stream,
+                () -> {
+                    // A plugin was enabled or disabled, so spike attribution's package map
+                    // is now stale. Rebuilding it is cheap and this is rare.
+                    if (metrics != null) metrics.refreshAttribution();
+                });
+        capture.register();
+
+        if (config.capture.consoleErrors() || config.capture.consoleBufferLines() > 0) {
+            console = new ConsoleCapture(config.capture.consoleBufferLines(),
+                    config.capture.consoleErrors(), this::stream, capture);
+            console.attach();
+        }
+    }
+
+    private void registerCommands() {
+        PluginCommand command = getCommand("godview");
+        if (command == null) {
+            // Only reachable if plugin.yml and this class disagree, which is a build bug.
+            getLogger().severe("The 'godview' command is missing from plugin.yml — "
+                    + "in-game administration is unavailable.");
+            return;
+        }
+        GodViewCommand executor = new GodViewCommand(this);
+        command.setExecutor(executor);
+        command.setTabCompleter(executor);
     }
 
     /**
@@ -154,6 +207,20 @@ public final class GodViewPlugin extends JavaPlugin {
         config = loadConfig();
         if (metrics != null) metrics.reload(config);
         if (web != null) web.reload(config);
+        if (capture != null) capture.reload(config);
+
+        // Console capture is rebuilt rather than reconfigured: the buffer size and the
+        // error toggle are both fixed at construction, and reattaching is cheap.
+        if (console != null) {
+            console.detach();
+            console = null;
+        }
+        if (capture != null
+                && (config.capture.consoleErrors() || config.capture.consoleBufferLines() > 0)) {
+            console = new ConsoleCapture(config.capture.consoleBufferLines(),
+                    config.capture.consoleErrors(), this::stream, capture);
+            console.attach();
+        }
         return config;
     }
 
@@ -185,5 +252,10 @@ public final class GodViewPlugin extends JavaPlugin {
     /** Null until the panel has started. */
     public EventStream stream() {
         return stream;
+    }
+
+    /** Null when console capture is disabled in config.yml. */
+    public ConsoleCapture console() {
+        return console;
     }
 }

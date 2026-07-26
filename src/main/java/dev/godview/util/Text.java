@@ -41,6 +41,40 @@ public final class Text {
     }
 
     /**
+     * Removes ANSI escape sequences.
+     *
+     * <p>Console output arrives coloured — Paper writes SGR codes, and some plugins emit
+     * their own. Left in, they render as {@code [0;32m} in the panel's log view.
+     * Hand-scanned rather than regex-matched because this runs on every console line,
+     * including from inside a tick.
+     */
+    public static String stripAnsi(String text) {
+        if (text == null || text.isEmpty()) return "";
+        int escape = text.indexOf(0x1B);
+        if (escape < 0) return text;
+
+        StringBuilder sb = new StringBuilder(text.length());
+        int i = 0;
+        while (i < text.length()) {
+            char c = text.charAt(i);
+            if (c != 0x1B) {
+                sb.append(c);
+                i++;
+                continue;
+            }
+            // CSI sequence: ESC [ ... <final byte in @-~>. Anything else after ESC is a
+            // two-character sequence we drop wholesale.
+            i++;
+            if (i < text.length() && text.charAt(i) == '[') {
+                i++;
+                while (i < text.length() && (text.charAt(i) < '@' || text.charAt(i) > '~')) i++;
+            }
+            i++;   // skip the terminating byte
+        }
+        return sb.toString();
+    }
+
+    /**
      * Shortens text to {@code max} characters, marking that it was cut.
      *
      * <p>Used wherever player-supplied text reaches storage or an alert body — a chat

@@ -1,6 +1,7 @@
 package dev.godview.web.api;
 
 import dev.godview.compat.Compat;
+import dev.godview.listener.ConsoleCapture;
 import dev.godview.metrics.GcMonitor;
 import dev.godview.metrics.MetricsService;
 import dev.godview.metrics.PlayerSnapshot;
@@ -59,6 +60,7 @@ public final class ApiRoutes {
         router.get("/api/players/{name}", Role.Permission.VIEW, this::player);
         router.get("/api/events", Role.Permission.VIEW, this::events);
         router.get("/api/system", Role.Permission.VIEW, this::system);
+        router.get("/api/console/log", Role.Permission.VIEW, this::consoleLog);
         // The audit log records who did what, including failed attempts. That is exactly
         // the sort of thing an ordinary operator account should not be able to browse.
         router.get("/api/audit", Role.Permission.MANAGE_USERS, this::audit);
@@ -271,6 +273,53 @@ public final class ApiRoutes {
         exchange.json(200, w.end().end());
     }
 
+    /**
+     * Recent console output.
+     *
+     * <p>Split by permission rather than gated outright. Errors and warnings are the
+     * diagnostic signal a read-only account is there to watch, but INFO-level console
+     * output routinely contains player IP addresses on join, so anything below WARN needs
+     * the same permission as running commands.
+     */
+    private void consoleLog(WebExchange exchange) throws IOException {
+        ConsoleCapture console = ctx.consoleCapture();
+        JsonWriter w = new JsonWriter(8192);
+        w.obj().field("enabled", console != null);
+
+        if (console == null) {
+            exchange.json(200, w.field("reason", "capture.console-buffer-lines is 0 or capture failed")
+                    .name("lines").arr().end().end());
+            return;
+        }
+
+        boolean full = exchange.session().can(Role.Permission.COMMAND);
+        String requested = exchange.query("level", full ? "" : "WARN");
+        if (!full && rank(requested) < rank("WARN")) requested = "WARN";
+
+        w.field("level", requested.isEmpty() ? "ALL" : requested)
+                .field("restricted", !full)
+                .field("buffered", console.buffered())
+                .field("totalLines", console.totalLines())
+                .field("totalErrors", console.totalErrors())
+                .field("suppressedErrors", console.suppressedErrors())
+                .name("lines").arr();
+        for (ConsoleCapture.Line line : console.recent(limit(exchange), requested)) {
+            line.writeJson(w);
+        }
+        exchange.json(200, w.end().end());
+    }
+
+    private static int rank(String level) {
+        return switch (level == null ? "" : level.toUpperCase(java.util.Locale.ROOT)) {
+            case "FATAL" -> 5;
+            case "ERROR" -> 4;
+            case "WARN" -> 3;
+            case "INFO" -> 2;
+            case "DEBUG" -> 1;
+            default -> 0;
+        };
+    }
+
     // ------------------------------------------------------------------ system
 
     /** Everything about the process and the plugin itself, for the diagnostics page. */
@@ -324,6 +373,10 @@ public final class ApiRoutes {
                 .field("httpRejected", ctx.web().rejectedRequests())
                 .field("httpErrors", ctx.web().failedRequests())
                 .field("httpActiveWorkers", ctx.web().activeWorkers())
+                .field("consoleAttached", ctx.consoleCapture() != null
+                        && ctx.consoleCapture().isAttached())
+                .field("consoleLines", ctx.consoleCapture() == null ? 0
+                        : ctx.consoleCapture().totalLines())
                 .field("sessions", ctx.web().sessions().activeCount())
                 .field("loginFailures", ctx.web().loginGuard().totalFailures())
                 .field("loginLockouts", ctx.web().loginGuard().totalLockouts())

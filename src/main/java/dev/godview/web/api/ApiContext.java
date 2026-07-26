@@ -1,6 +1,7 @@
 package dev.godview.web.api;
 
 import dev.godview.config.GodViewConfig;
+import dev.godview.listener.ConsoleCapture;
 import dev.godview.metrics.MetricsService;
 import dev.godview.storage.Storage;
 import dev.godview.web.WebServer;
@@ -17,7 +18,8 @@ import java.util.function.Supplier;
  * that was thrown away hours ago.
  */
 public record ApiContext(Plugin plugin, MetricsService metrics, Supplier<Storage> storage,
-                         WebServer web, Supplier<GodViewConfig> config, EventStream stream) {
+                         WebServer web, Supplier<GodViewConfig> config, EventStream stream,
+                         Supplier<ConsoleCapture> console) {
 
     public GodViewConfig cfg() {
         return config.get();
@@ -25,6 +27,11 @@ public record ApiContext(Plugin plugin, MetricsService metrics, Supplier<Storage
 
     public Storage store() {
         return storage.get();
+    }
+
+    /** Null when console capture is off, or before it has attached. */
+    public ConsoleCapture consoleCapture() {
+        return console == null ? null : console.get();
     }
 
     /** Request body cap, from {@code web.max-body-kb}. */
