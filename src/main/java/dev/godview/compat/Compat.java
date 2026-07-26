@@ -266,19 +266,31 @@ public final class Compat {
         }
     }
 
-    /** Disconnects a player. Must run on the main thread. */
+    /**
+     * Disconnects a player. Must run on the main thread.
+     *
+     * <p>Deprecated in favour of the Adventure {@code kick(Component)} overload, which does
+     * not exist on every fork we support — the String form still works everywhere.
+     */
+    @SuppressWarnings("deprecation")
     public static void kick(Player player, String reason) {
         player.kickPlayer(reason == null ? "" : reason);
     }
 
     // -------------------------------------------------------------------- bans
 
+    // The String-keyed BanList methods below are deprecated in favour of profile-keyed
+    // ones, but those need a resolved PlayerProfile — a blocking Mojang lookup for anyone
+    // who has never joined. The panel bans by typed name, often pre-emptively, so the
+    // deprecated overloads are the correct tool here and the warnings are suppressed
+    // deliberately rather than left to accumulate.
+
     /**
      * Bans a player by name. {@code expires} may be null for a permanent ban.
      *
      * @return false when the server exposes no usable ban list
      */
-    @SuppressWarnings({"unchecked", "rawtypes"})
+    @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
     public static boolean ban(String name, String reason, String source, Date expires) {
         if (BAN_TYPE_NAME == null) return false;
         try {
@@ -290,7 +302,7 @@ public final class Compat {
         }
     }
 
-    @SuppressWarnings("rawtypes")
+    @SuppressWarnings({"rawtypes", "deprecation"})
     public static boolean unban(String name) {
         if (BAN_TYPE_NAME == null) return false;
         try {
@@ -302,7 +314,7 @@ public final class Compat {
         }
     }
 
-    @SuppressWarnings("rawtypes")
+    @SuppressWarnings({"rawtypes", "deprecation"})
     public static boolean isBanned(String name) {
         if (BAN_TYPE_NAME == null) return false;
         try {
@@ -313,7 +325,7 @@ public final class Compat {
         }
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
+    @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
     public static boolean banIp(String ip, String reason, String source, Date expires) {
         try {
             BanList list = Bukkit.getBanList(BanList.Type.IP);
@@ -324,7 +336,7 @@ public final class Compat {
         }
     }
 
-    @SuppressWarnings("rawtypes")
+    @SuppressWarnings({"rawtypes", "deprecation"})
     public static boolean unbanIp(String ip) {
         try {
             BanList list = Bukkit.getBanList(BanList.Type.IP);

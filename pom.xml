@@ -108,7 +108,9 @@
         <configuration>
           <release>${java.version}</release>
           <compilerArgs>
-            <arg>-Xlint:-options</arg>
+            <!-- Warnings stay on so a real one is visible. Anything we knowingly do
+                 against a legacy Bukkit API is suppressed at the call site instead. -->
+            <arg>-Xlint:all,-options,-processing</arg>
           </compilerArgs>
         </configuration>
       </plugin>
@@ -121,6 +123,12 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-resources-plugin</artifactId>
         <version>3.3.1</version>
+      </plugin>
+      <!-- Pinned only so `clean` resolves the same way on a cold repo as everything else. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-clean-plugin</artifactId>
+        <version>3.3.2</version>
       </plugin>
     </plugins>
   </build>

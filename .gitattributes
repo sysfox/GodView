@@ -1,0 +1,11 @@
+# Normalize to LF in the repository. The panel assets are served byte-for-byte
+# from the jar, so a CRLF checkout on Windows must not leak into them.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.db binary
+*.p12 binary
