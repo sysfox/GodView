@@ -1,0 +1,233 @@
+# ============================================================================
+#  GodView — Paper 服务器实时运维控制台
+#  改完执行 /godview reload。标注 [重启] 的项需要重启服务器或重载插件才生效。
+# ============================================================================
+
+# 面板语言：zh_CN / en_US
+locale: zh_CN
+
+web:
+  enabled: true
+  # [重启] 监听地址。只想本机访问 + Nginx 反代时填 127.0.0.1
+  bind: "0.0.0.0"
+  # [重启] 面板端口
+  port: 8899
+  # [重启] HTTP 工作线程数。低配服 2 就够（SSE 长连接不占线程）
+  threads: 3
+  # 单次请求体上限（KB）
+  max-body-kb: 256
+  # 静态资源与 JSON 响应 gzip 压缩
+  gzip: true
+
+  # 反向代理场景：从 X-Forwarded-For 取真实 IP。
+  # 只有在确实有可信代理时才开启，否则攻击者可伪造 IP 绕过限流/白名单。
+  behind-proxy: false
+  trusted-proxies:
+    - "127.0.0.1"
+    - "::1"
+
+  # [重启] 内置 HTTPS。生产环境更推荐用 Nginx/Caddy 反代来做 TLS。
+  tls:
+    enabled: false
+    # PKCS#12 keystore，相对于 plugins/GodView/
+    keystore: "keystore.p12"
+    password: ""
+
+security:
+  # 会话有效期（分钟）
+  session-timeout-minutes: 120
+  # 活跃时自动续期
+  session-sliding-renew: true
+  # 同一账号最多同时在线会话数，超出踢掉最旧的
+  max-sessions-per-user: 5
+
+  login:
+    # 窗口期内失败多少次锁定该 IP
+    max-attempts: 5
+    window-seconds: 300
+    lockout-seconds: 300
+
+  # IP 白名单（支持 CIDR，如 "192.168.1.0/24"）。留空 = 不限制
+  ip-allowlist: []
+
+  # 面板执行命令的过滤。黑名单优先级高于白名单。
+  command-blacklist:
+    - "(?i)^\\s*/?(stop|restart)\\b"
+  # 留空 = 除黑名单外全部允许；填了则只允许匹配到的
+  command-whitelist: []
+
+  # 危险操作（封禁、回滚、权限写入、玩家背包修改）需要在面板二次确认
+  require-confirm: true
+
+  # 记录所有面板发起的变更操作
+  audit: true
+
+performance:
+  # auto  = 按 TPS 自动在 full/balanced/low 之间切换（推荐）
+  # low / balanced / full = 手动固定
+  profile: auto
+
+  # 没有人打开面板时完全停止快照采集。低配服强烈建议保持 true。
+  idle-suspend: true
+
+  # 快照推送间隔（tick）。auto 模式下会在 10/20/40 之间自动调整
+  snapshot-interval-ticks: 20
+
+  # 每 tick 采样器（开销 ~0.01ms/tick），关掉就没有卡顿检测了
+  tick-sampler: true
+
+  # 单 tick 超过这个毫秒数记一次卡顿
+  spike-threshold-ms: 120
+
+  # 卡顿时抓取主线程堆栈——这是定位「到底是谁卡的」的关键功能
+  spike-stack-capture: true
+  spike-max-per-minute: 6
+
+  # GC 暂停监控（JMX 通知，无轮询开销）
+  gc-monitor: true
+
+  # 世界统计（实体数 / 方块实体数 / 区块数）采集间隔（tick）。这项偏贵，别调太小。
+  world-stats-interval-ticks: 100
+
+  # auto 模式的降级/恢复阈值
+  degrade:
+    tps-below: 17.0
+    restore-tps-above: 19.0
+
+storage:
+  # sqlite = 历史落盘；memory = 只留内存，重启即丢（最省）
+  type: sqlite
+  file: "godview.db"
+  # 批量写入参数
+  batch-size: 200
+  flush-interval-ms: 2000
+  # 保留期（天），后台每小时清理一次
+  retention:
+    events-days: 14
+    metrics-days: 30
+    spikes-days: 30
+    audit-days: 90
+    alerts-days: 30
+
+# 服务器事件采集开关。关掉的事件不会注册监听器，真正零开销。
+capture:
+  join-quit: true
+  chat: true
+  commands: true
+  deaths: true
+  kicks-bans: true
+  teleports: false
+  world-load: true
+  console-errors: true
+  # 方块事件量极大，默认关闭。要查方块历史请用 CoreProtect 面板。
+  block-place: false
+  block-break: false
+  container-open: false
+  # 控制台实时日志缓冲行数
+  console-buffer-lines: 400
+
+map:
+  enabled: true
+  # 每 tick 最多取多少个区块快照（这是地图的主要开销来源，低配服设 1~2）
+  chunks-per-tick: 4
+  # 允许从磁盘加载「未加载区块」来补全地图（有磁盘 IO，默认关）
+  load-unloaded: false
+  unloaded-per-second: 2
+  # 瓦片缓存
+  tile-cache-mb: 24
+  tile-ttl-seconds: 300
+  # 每张瓦片包含多少区块（8 => 128×128 像素）
+  chunks-per-tile: 8
+  disabled-worlds: []
+
+integrations:
+  luckperms: true
+  coreprotect: true
+  placeholderapi: true
+  vault: true
+  spark: true
+  essentials: true
+
+alerts:
+  enabled: true
+  # 全局静默时段（服务器本地时间，跨天写法如 "23:00-07:00"）。留空不静默。
+  quiet-hours: ""
+  default-cooldown-seconds: 300
+
+  channels:
+    panel:
+      enabled: true
+    discord:
+      enabled: false
+      webhook: ""
+      # 例如 "<@&123456789012345678>"
+      mention: ""
+    telegram:
+      enabled: false
+      bot-token: ""
+      chat-id: ""
+    webhook:
+      enabled: false
+      url: ""
+      method: "POST"
+      headers: {}
+    serverchan:
+      enabled: false
+      key: ""
+    bark:
+      enabled: false
+      # https://api.day.app/<你的key>
+      url: ""
+
+  # 规则类型：
+  #   tps_below | mspt_above | memory_above | tick_spike | gc_pause
+  #   player_join | player_quit | first_join | player_death
+  #   player_count_above | player_count_below
+  #   chat_match | command_match | console_error | login_failed
+  # severity: info | warn | critical
+  rules:
+    - id: tps-low
+      type: tps_below
+      threshold: 15.0
+      sustain-seconds: 30
+      severity: warn
+      channels: [panel, discord]
+
+    - id: tps-critical
+      type: tps_below
+      threshold: 10.0
+      sustain-seconds: 15
+      severity: critical
+      channels: [panel, discord, telegram]
+
+    - id: tick-spike
+      type: tick_spike
+      threshold: 500.0
+      severity: warn
+      cooldown-seconds: 120
+      channels: [panel]
+
+    - id: heap-pressure
+      type: memory_above
+      threshold: 92.0
+      sustain-seconds: 60
+      severity: warn
+      channels: [panel, discord]
+
+    - id: console-error-burst
+      type: console_error
+      threshold: 20.0
+      severity: warn
+      channels: [panel]
+
+    - id: panel-bruteforce
+      type: login_failed
+      threshold: 5.0
+      severity: critical
+      channels: [panel, discord]
+
+    - id: op-granted
+      type: command_match
+      pattern: "(?i)^/?(op|deop)\\s|^/?lp\\s+user\\s+\\S+\\s+parent\\s+set\\s+(admin|owner)"
+      severity: critical
+      channels: [panel, discord, telegram]

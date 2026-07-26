@@ -1,0 +1,43 @@
+name: GodView
+version: '${project.version}'
+main: dev.godview.GodViewPlugin
+api-version: '1.20'
+author: TerorFox
+description: Realtime web operations console for Paper servers.
+load: POSTWORLD
+
+# Downloaded by Paper's library loader on first start. Nothing is shaded into
+# the jar; if the download fails GodView falls back to in-memory storage.
+libraries:
+  - org.xerial:sqlite-jdbc:3.46.1.3
+
+softdepend:
+  - LuckPerms
+  - CoreProtect
+  - PlaceholderAPI
+  - Vault
+  - spark
+  - Essentials
+
+commands:
+  godview:
+    description: GodView management
+    usage: |
+      /godview status              - server + panel status
+      /godview reload              - reload config.yml
+      /godview user add <name> <role>
+      /godview user passwd <name>
+      /godview user remove <name>
+      /godview user list
+      /godview sessions revoke <name>
+      /godview link                - one-time login link for yourself
+    aliases: [gv]
+    permission: godview.admin
+
+permissions:
+  godview.admin:
+    description: Full access to GodView in-game commands.
+    default: op
+  godview.link:
+    description: Allows generating a one-time panel login link.
+    default: op
