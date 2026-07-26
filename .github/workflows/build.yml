@@ -1,0 +1,73 @@
+name: Build
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch cancels the first: the older run is testing
+# code nobody is going to look at any more.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: maven
+
+      # Node is downloaded by frontend-maven-plugin, not by the runner, so the
+      # jar CI produces is byte-for-byte the one a developer gets locally. Only
+      # the package cache is worth keeping here.
+      - name: Cache npm packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('panel/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+
+      - name: Build and test
+        run: mvn -B --no-transfer-progress verify
+
+      # The suites bind sockets and write SQLite files; when one fails, the
+      # report says which assertion and the log usually says why.
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          retention-days: 7
+
+      - name: Check the panel made it into the jar
+        run: |
+          jar=$(ls target/GodView-*.jar)
+          echo "Built $jar ($(du -h "$jar" | cut -f1))"
+          unzip -l "$jar" | grep -q 'web/index.html' \
+            || { echo "::error::the panel is missing from the jar"; exit 1; }
+          unzip -p "$jar" web/index.html | grep -qE '<script[^>]+src=' \
+            || { echo "::error::index.html has no external script tag"; exit 1; }
+          # An inline script would be blocked by the CSP the server sends, which
+          # produces a blank page that works perfectly in `npm run dev`.
+          if unzip -p "$jar" web/index.html | grep -qE '<script(?![^>]*src=)[^>]*>[^<]' ; then
+            echo "::error::index.html contains an inline script; the CSP will block it"
+            exit 1
+          fi
+
+      - name: Upload the jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: GodView
+          path: target/GodView-*.jar
+          retention-days: 30

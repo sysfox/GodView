@@ -1,0 +1,30 @@
+version: 2
+updates:
+  # The Paper API is deliberately pinned to the oldest 1.21 so one jar covers the
+  # whole line -- see the comment in pom.xml. Dependabot must not "helpfully"
+  # raise it, so paper-api is ignored here and reviewed by hand.
+  - package-ecosystem: maven
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "io.papermc.paper:paper-api"
+      - dependency-name: "org.apache.logging.log4j:log4j-core"
+    labels: [dependencies]
+
+  - package-ecosystem: npm
+    directory: "/panel"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels: [dependencies, panel]
+    groups:
+      vite:
+        patterns: ["vite", "@vitejs/*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    labels: [dependencies]

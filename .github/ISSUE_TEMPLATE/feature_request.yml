@@ -1,0 +1,64 @@
+name: Feature request
+description: Something GodView should be able to do and cannot
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The most useful requests describe a situation rather than a feature —
+        what you were trying to find out, and what the panel could not tell you.
+        That leaves room for a better answer than the one you had in mind.
+
+        Worth knowing up front: GodView deliberately does not do some things.
+        It does not write permissions (LuckPerms does that better), does not roll
+        back blocks (CoreProtect does), and does not profile call trees (spark
+        does). See [Integrations](https://github.com/sysfox/GodView/blob/master/docs/integrations.md).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What were you trying to work out?
+      description: The situation, before the solution.
+      placeholder: |
+        A player reported lag at a specific time last night. I can see the TPS
+        dip in the chart but I cannot tell which plugin caused it, because the
+        spike history only goes back an hour.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+      description: If you have something specific in mind.
+      placeholder: |
+        Being able to click a point on the TPS chart and see the spikes recorded
+        around that moment.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead
+      description: >
+        Even "I grep the log by hand" is useful — it says what the workaround
+        costs.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of GodView
+      multiple: true
+      options:
+        - Live dashboard and spike attribution
+        - Players
+        - Console
+        - Events and history
+        - Map
+        - Alerts
+        - Diagnostics
+        - REST API
+        - In-game commands
+        - Configuration
+        - Something else
+    validations:
+      required: true

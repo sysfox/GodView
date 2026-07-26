@@ -1,0 +1,103 @@
+name: Bug report
+description: Something is not working the way the documentation says it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing, two things resolve most reports on their own:
+
+        - [Troubleshooting](https://github.com/sysfox/GodView/blob/master/docs/troubleshooting.md)
+          is organised by symptom.
+        - `/godview status` and the panel's Diagnostics view say what GodView
+          thinks is happening. Both are safe to paste here — neither contains
+          passwords, session tokens or player addresses.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+      placeholder: |
+        The tick ribbon stays empty even though /godview status reports spikes.
+        I expected bars to appear in the header.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: >
+        The steps you took. If it only happens under load or after a while, say
+        so — that is useful information, not a gap in the report.
+      placeholder: |
+        1. Fresh install on Paper 1.21.4
+        2. /godview user add admin admin
+        3. Sign in, open Live
+        4. Ribbon is empty; the spike table has rows
+    validations:
+      required: true
+
+  - type: input
+    id: godview-version
+    attributes:
+      label: GodView version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: server
+    attributes:
+      label: Server software and version
+      description: The first line of `/version`.
+      placeholder: "Paper 1.21.4 (build 232)"
+    validations:
+      required: true
+
+  - type: input
+    id: java
+    attributes:
+      label: Java version
+      placeholder: "Temurin 21.0.5"
+    validations:
+      required: true
+
+  - type: textarea
+    id: status
+    attributes:
+      label: /godview status
+      description: Run it in the console and paste the output.
+      render: text
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: >
+        Anything from GodView around the time it happened, including the startup
+        lines. Stack traces in full, please — the interesting frame is rarely the
+        first one.
+      render: text
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Anything non-default in config.yml
+      description: >
+        Only the parts you changed. **Do not paste `users.yml`** — it contains
+        password hashes.
+      render: yaml
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I am running Paper (not Spigot, CraftBukkit or Folia) on Java 21+
+          required: true
+        - label: I checked the troubleshooting page for this symptom
+          required: true
+        - label: This report contains no passwords, tokens or player IP addresses
+          required: true

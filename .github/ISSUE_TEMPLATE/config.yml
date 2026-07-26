@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Something is not working
+    url: https://github.com/sysfox/GodView/blob/master/docs/troubleshooting.md
+    about: Organised by symptom. Most reports are answered here.
+  - name: How do I configure this?
+    url: https://github.com/sysfox/GodView/blob/master/docs/configuration.md
+    about: Every key in config.yml, and what each one costs.
+  - name: A security issue
+    url: https://github.com/sysfox/GodView/security/advisories/new
+    about: Report privately. Please do not open a public issue.
