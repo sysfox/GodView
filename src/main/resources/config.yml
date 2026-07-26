@@ -151,6 +151,8 @@ integrations:
 alerts:
   enabled: true
   # 全局静默时段（服务器本地时间，跨天写法如 "23:00-07:00"）。留空不静默。
+  # 静默期内 info 和 warn 不推送，但 critical 照常推送——设静默是为了睡个好觉，
+  # 不是为了错过服务器宕机。被静默的告警仍会记录，面板上看得到。
   quiet-hours: ""
   default-cooldown-seconds: 300
 
