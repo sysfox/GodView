@@ -5,9 +5,14 @@ import dev.godview.config.GodViewConfig;
 import dev.godview.metrics.MetricsService;
 import dev.godview.storage.Storage;
 import dev.godview.storage.StorageFactory;
+import dev.godview.web.WebServer;
+import dev.godview.web.auth.AuthRoutes;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
+
+import java.io.IOException;
+import java.util.logging.Level;
 
 /**
  * Plugin entry point and the single owner of every long-lived service.
@@ -34,6 +39,7 @@ public final class GodViewPlugin extends JavaPlugin {
     private GodViewConfig config;
     private MetricsService metrics;
     private Storage storage;
+    private WebServer web;
     private BukkitTask metricWriteTask;
 
     @Override
@@ -48,11 +54,19 @@ public final class GodViewPlugin extends JavaPlugin {
         metrics = new MetricsService(this, config);
         metrics.start();
         wireStorage();
+
+        startWeb();
     }
 
     @Override
     public void onDisable() {
-        // Reverse of startup: stop producing before closing what consumes.
+        // Reverse of startup: stop accepting requests, then stop producing, then close
+        // what consumes. Doing this the other way round leaves a handler reading from a
+        // storage layer that has already shut its connections.
+        if (web != null) {
+            web.stop();
+            web = null;
+        }
         if (metricWriteTask != null) {
             metricWriteTask.cancel();
             metricWriteTask = null;
@@ -64,6 +78,24 @@ public final class GodViewPlugin extends JavaPlugin {
         if (storage != null) {
             storage.close();
             storage = null;
+        }
+    }
+
+    private void startWeb() {
+        WebServer server = new WebServer(config, getDataFolder().toPath(),
+                getClass().getClassLoader(), getLogger());
+        new AuthRoutes(server, this::storage, this::config).register(server.router());
+
+        try {
+            server.start();
+            web = server;
+        } catch (IOException e) {
+            // A port clash or an unreadable keystore must not take the plugin down with
+            // it — metrics, alerts and the in-game commands all keep working without a
+            // panel, and that is worth more than failing loudly here.
+            getLogger().log(Level.SEVERE, "GodView could not start the web panel on "
+                    + config.web.bind() + ":" + config.web.port()
+                    + " — the panel is unavailable, everything else keeps running.", e);
         }
     }
 
@@ -95,6 +127,7 @@ public final class GodViewPlugin extends JavaPlugin {
         reloadConfig();
         config = loadConfig();
         if (metrics != null) metrics.reload(config);
+        if (web != null) web.reload(config);
         return config;
     }
 
@@ -116,5 +149,10 @@ public final class GodViewPlugin extends JavaPlugin {
 
     public Storage storage() {
         return storage;
+    }
+
+    /** Null when the panel is disabled or failed to bind. */
+    public WebServer web() {
+        return web;
     }
 }
