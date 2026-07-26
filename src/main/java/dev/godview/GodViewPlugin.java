@@ -7,6 +7,7 @@ import dev.godview.config.GodViewConfig;
 import dev.godview.integration.IntegrationManager;
 import dev.godview.listener.ConsoleCapture;
 import dev.godview.listener.EventCapture;
+import dev.godview.map.MapService;
 import dev.godview.metrics.MetricsService;
 import dev.godview.storage.Storage;
 import dev.godview.storage.StorageFactory;
@@ -16,6 +17,7 @@ import dev.godview.web.api.ApiContext;
 import dev.godview.web.api.ApiRoutes;
 import dev.godview.web.api.IntegrationRoutes;
 import dev.godview.web.api.EventStream;
+import dev.godview.web.api.MapRoutes;
 import dev.godview.web.api.SnapshotPusher;
 import dev.godview.web.auth.AuthRoutes;
 import org.bukkit.Bukkit;
@@ -58,6 +60,7 @@ public final class GodViewPlugin extends JavaPlugin {
     private ConsoleCapture console;
     private IntegrationManager integrations;
     private AlertEngine alerts;
+    private MapService map;
     private AuthRoutes authRoutes;
     private BukkitTask metricWriteTask;
 
@@ -83,6 +86,7 @@ public final class GodViewPlugin extends JavaPlugin {
         startWeb();
         startCapture();
         startAlerts();
+        startMap();
         registerCommands();
 
         if (web != null && web.users().isEmpty()) {
@@ -97,6 +101,10 @@ public final class GodViewPlugin extends JavaPlugin {
         // what consumes. Doing this the other way round leaves a handler reading from a
         // storage layer that has already shut its connections.
         // Stop producing events before the things they are written into go away.
+        if (map != null) {
+            map.stop();
+            map = null;
+        }
         if (alerts != null) {
             alerts.stop();
             alerts = null;
@@ -150,6 +158,7 @@ public final class GodViewPlugin extends JavaPlugin {
         new ApiRoutes(ctx).register(server.router());
         new ActionRoutes(ctx).register(server.router());
         new IntegrationRoutes(ctx).register(server.router());
+        new MapRoutes(ctx, this::map).register(server.router());
 
         try {
             server.start();
@@ -199,6 +208,19 @@ public final class GodViewPlugin extends JavaPlugin {
         metrics.addGcListener(event -> alerts.onGc(event));
         if (capture != null) capture.onEvent(event -> alerts.onEvent(event));
         if (authRoutes != null) authRoutes.onLoginFailure(ip -> alerts.onLoginFailure(ip));
+    }
+
+    /**
+     * Starts the map renderer.
+     *
+     * <p>Given the metrics service so it can honour both the performance profile and
+     * idle-suspend: with nobody watching, there is no reason to spend tick budget drawing
+     * a picture of the world.
+     */
+    private void startMap() {
+        map = new MapService(this, config, metrics, getLogger());
+        map.cache().setBudget(config.map.tileCacheMb() * 1024L * 1024L);
+        map.start();
     }
 
     private void registerCommands() {
@@ -262,6 +284,7 @@ public final class GodViewPlugin extends JavaPlugin {
             console.attach();
         }
         if (alerts != null) alerts.reload(config);
+        if (map != null) map.reload(config);
         return config;
     }
 
@@ -307,5 +330,10 @@ public final class GodViewPlugin extends JavaPlugin {
     /** Null until the alert engine has started. */
     public AlertEngine alerts() {
         return alerts;
+    }
+
+    /** Null when the map is disabled in config.yml. */
+    public MapService map() {
+        return map;
     }
 }
