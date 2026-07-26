@@ -4,9 +4,11 @@ import org.bukkit.BanList;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.Keyed;
+import org.bukkit.Location;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.World;
 import org.bukkit.block.BlockState;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 
@@ -47,6 +49,8 @@ public final class Compat {
     private static final Method M_TILE_ENTITIES_FAST; // Paper: Chunk#getTileEntities(boolean)
     private static final Method M_VIEW_DISTANCE;      // World#getViewDistance()
     private static final Method M_SIM_DISTANCE;       // Paper: World#getSimulationDistance()
+    private static final Method M_ENTITY_X;           // Paper: Entity#getX()
+    private static final Method M_ENTITY_Z;           // Paper: Entity#getZ()
     private static final Method M_GET_ATTRIBUTE;      // LivingEntity#getAttribute(Attribute)
     private static final Method M_ATTR_GET_VALUE;     // AttributeInstance#getValue()
     private static final Object ATTR_MAX_HEALTH;      // Attribute constant, renamed in 1.21.3
@@ -84,6 +88,8 @@ public final class Compat {
         M_TILE_ENTITIES_FAST = method(Chunk.class, "getTileEntities", boolean.class);
         M_VIEW_DISTANCE = method(World.class, "getViewDistance");
         M_SIM_DISTANCE = method(World.class, "getSimulationDistance");
+        M_ENTITY_X = method(Entity.class, "getX");
+        M_ENTITY_Z = method(Entity.class, "getZ");
 
         // Attribute was an enum through 1.21.2 and became a registry interface in 1.21.3,
         // where GENERIC_MAX_HEALTH was also renamed to MAX_HEALTH. Both spellings are
@@ -225,6 +231,39 @@ public final class Compat {
         } catch (Throwable ignored) {
             return "minecraft:plains";
         }
+    }
+
+    /**
+     * Packs an entity's chunk coordinates into one long ({@code cx} high, {@code cz} low).
+     *
+     * <p>Used to build entity hotspot counts, which means calling it once per entity on a
+     * server that may have tens of thousands. Paper's {@code getX()}/{@code getZ()} read
+     * the position directly; {@link org.bukkit.entity.Entity#getLocation()} allocates a
+     * {@link org.bukkit.Location} per call and is only the fallback.
+     */
+    public static long entityChunkKey(Entity entity) {
+        if (M_ENTITY_X != null && M_ENTITY_Z != null) {
+            try {
+                int cx = (int) Math.floor(((Number) M_ENTITY_X.invoke(entity)).doubleValue()) >> 4;
+                int cz = (int) Math.floor(((Number) M_ENTITY_Z.invoke(entity)).doubleValue()) >> 4;
+                return chunkKey(cx, cz);
+            } catch (Throwable ignored) {
+            }
+        }
+        Location loc = entity.getLocation();
+        return chunkKey(loc.getBlockX() >> 4, loc.getBlockZ() >> 4);
+    }
+
+    public static long chunkKey(int chunkX, int chunkZ) {
+        return ((long) chunkX << 32) | (chunkZ & 0xffffffffL);
+    }
+
+    public static int chunkKeyX(long key) {
+        return (int) (key >> 32);
+    }
+
+    public static int chunkKeyZ(long key) {
+        return (int) key;
     }
 
     // ------------------------------------------------------------------ player
