@@ -3,6 +3,7 @@ package dev.godview;
 import dev.godview.command.GodViewCommand;
 import dev.godview.compat.Compat;
 import dev.godview.config.GodViewConfig;
+import dev.godview.integration.IntegrationManager;
 import dev.godview.listener.ConsoleCapture;
 import dev.godview.listener.EventCapture;
 import dev.godview.metrics.MetricsService;
@@ -12,6 +13,7 @@ import dev.godview.web.WebServer;
 import dev.godview.web.api.ActionRoutes;
 import dev.godview.web.api.ApiContext;
 import dev.godview.web.api.ApiRoutes;
+import dev.godview.web.api.IntegrationRoutes;
 import dev.godview.web.api.EventStream;
 import dev.godview.web.api.SnapshotPusher;
 import dev.godview.web.auth.AuthRoutes;
@@ -53,6 +55,7 @@ public final class GodViewPlugin extends JavaPlugin {
     private SnapshotPusher pusher;
     private EventCapture capture;
     private ConsoleCapture console;
+    private IntegrationManager integrations;
     private BukkitTask metricWriteTask;
 
     @Override
@@ -63,6 +66,10 @@ public final class GodViewPlugin extends JavaPlugin {
         getLogger().info("Running on " + Compat.describe());
 
         storage = StorageFactory.create(config.storage, getDataFolder().toPath(), getLogger());
+
+        // Detected before the API comes up so the first request already sees them, and
+        // after the config so the integrations: flags are honoured.
+        integrations = new IntegrationManager(this, config, getLogger());
 
         metrics = new MetricsService(this, config);
         metrics.start();
@@ -127,11 +134,12 @@ public final class GodViewPlugin extends JavaPlugin {
         // is what makes performance.idle-suspend work: no panels open, no collection.
         stream = new EventStream(getLogger(), count -> metrics.setViewers(count));
         ApiContext ctx = new ApiContext(this, metrics, this::storage, server, this::config,
-                stream, this::console);
+                stream, this::console, this::integrations);
 
         new AuthRoutes(server, this::storage, this::config).register(server.router());
         new ApiRoutes(ctx).register(server.router());
         new ActionRoutes(ctx).register(server.router());
+        new IntegrationRoutes(ctx).register(server.router());
 
         try {
             server.start();
@@ -209,6 +217,10 @@ public final class GodViewPlugin extends JavaPlugin {
         if (web != null) web.reload(config);
         if (capture != null) capture.reload(config);
 
+        // Rebuilt rather than reconfigured: a flag turning on has to construct an
+        // integration that was never created, and turning one off has to forget it.
+        integrations = new IntegrationManager(this, config, getLogger());
+
         // Console capture is rebuilt rather than reconfigured: the buffer size and the
         // error toggle are both fixed at construction, and reattaching is cheap.
         if (console != null) {
@@ -257,5 +269,9 @@ public final class GodViewPlugin extends JavaPlugin {
     /** Null when console capture is disabled in config.yml. */
     public ConsoleCapture console() {
         return console;
+    }
+
+    public IntegrationManager integrations() {
+        return integrations;
     }
 }
