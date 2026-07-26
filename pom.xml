@@ -25,6 +25,7 @@
          Java side; the server then serves its API-only placeholder page. -->
     <node.version>v22.11.0</node.version>
     <godview.panel.skip>false</godview.panel.skip>
+    <junit.version>5.11.4</junit.version>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
   </properties>
@@ -109,6 +110,12 @@
       <version>2.17.1</version>
       <scope>provided</scope>
     </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -150,6 +157,22 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
         <version>3.4.1</version>
+      </plugin>
+
+      <!-- The suites bind real sockets, open real SQLite files and attach a real
+           Log4j appender, so they run in one JVM sequentially rather than forked
+           per class. Headless is set because the map renderer touches AWT to
+           encode PNGs, and a CI box has no display. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+        <configuration>
+          <argLine>-Djava.awt.headless=true -Duser.language=en -Duser.country=US</argLine>
+          <forkCount>1</forkCount>
+          <reuseForks>true</reuseForks>
+          <trimStackTrace>false</trimStackTrace>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -197,7 +220,10 @@
           </execution>
           <execution>
             <id>panel-build</id>
-            <phase>prepare-package</phase>
+            <!-- process-classes, not prepare-package: the panel is a build output the
+                 tests legitimately assert on, and the test phase runs first. Building
+                 it later meant `mvn test` checked a directory that did not exist yet. -->
+            <phase>process-classes</phase>
             <goals><goal>npm</goal></goals>
             <configuration>
               <arguments>run build</arguments>
