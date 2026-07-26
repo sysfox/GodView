@@ -177,7 +177,7 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-resources-plugin</artifactId>
-        <version>3.3.1</version>
+        <version>3.5.0</version>
       </plugin>
       <!-- Pinned only so `clean` resolves the same way on a cold repo as everything else. -->
       <plugin>
