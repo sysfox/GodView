@@ -88,6 +88,12 @@ GodView is built for the servers that need monitoring most — the small, overlo
 
 The reasoning behind each of these is in [docs/architecture.md](docs/architecture.md).
 
+## Contributing
+
+Bug reports, ideas and pull requests are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md). Security issues should be
+[reported privately](SECURITY.md) rather than opened as an issue.
+
 ## Licence
 
-Not yet chosen.
+[MIT](LICENSE).
