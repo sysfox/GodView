@@ -31,7 +31,7 @@ jobs:
       # jar CI produces is byte-for-byte the one a developer gets locally. Only
       # the package cache is worth keeping here.
       - name: Cache npm packages
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('panel/package-lock.json') }}
