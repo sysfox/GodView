@@ -19,13 +19,14 @@ import java.lang.reflect.Method;
 import java.util.Date;
 
 /**
- * Every place where 1.20.x and 1.21.x disagree, in one file.
+ * Every place the 1.21 line disagrees with itself, in one file.
  *
- * <p>GodView compiles against paper-api 1.20.1 and ships a single jar for both branches.
- * Most of the API we touch is stable across them and is called directly; what actually
- * moved gets a cached {@link Method} and a fallback, so a server on either branch —
- * or a fork that dropped something — degrades to a sane value instead of throwing
- * {@code NoSuchMethodError} out of a scheduled task.
+ * <p>GodView compiles against paper-api 1.21.1 — the oldest 1.21 — and ships a single jar
+ * that runs unchanged through 1.21.11. Most of the API we touch is stable across that
+ * range and is called directly; what actually moved gets a cached {@link Method} and a
+ * fallback, so a server anywhere in the line — or a fork that dropped something —
+ * degrades to a sane value instead of throwing {@code NoSuchMethodError} out of a
+ * scheduled task.
  *
  * <p>The rule for anything added here: resolve reflectively <em>once</em> in the static
  * initializer, never per call. A metrics sampler runs twenty times a second; it cannot
@@ -36,7 +37,7 @@ import java.util.Date;
  */
 public final class Compat {
 
-    /** Minor version, e.g. {@code 21} for 1.21.4. Defaults to 20 if detection fails. */
+    /** Minor version, e.g. {@code 21} for 1.21.4. Defaults to the compile floor if detection fails. */
     public static final int MINOR;
     /** Patch version, e.g. {@code 4} for 1.21.4. */
     public static final int PATCH;
@@ -57,12 +58,16 @@ public final class Compat {
     private static final Method M_GET_ATTRIBUTE;      // LivingEntity#getAttribute(Attribute)
     private static final Method M_ATTR_GET_VALUE;     // AttributeInstance#getValue()
     private static final Object ATTR_MAX_HEALTH;      // Attribute constant, renamed in 1.21.3
-    private static final BanList.Type BAN_TYPE_NAME;  // PROFILE on 1.20.4+, NAME before
+    private static final Method M_GET_BAN_LIST;       // Bukkit#getBanList(<whichever type enum>)
+    private static final Object BAN_TYPE_PLAYER;      // PROFILE where present, else NAME
+    private static final Object BAN_TYPE_IP;
 
     static {
-        int minor = 20;
+        // The floor we compile against, so a detection failure reports the least
+        // capable supported server rather than claiming features that may not be there.
+        int minor = 21;
         int patch = 1;
-        String version = "1.20.1";
+        String version = "1.21.1";
         String brand = "Unknown";
         try {
             // "1.21.4-R0.1-SNAPSHOT" -> "1.21.4"
@@ -112,15 +117,40 @@ public final class Compat {
         M_GET_ATTRIBUTE = getAttribute;
         M_ATTR_GET_VALUE = attrValue;
 
-        // BanList.Type.NAME is deprecated from 1.20.4 in favour of PROFILE. Both accept
-        // the String-keyed methods we use, so we just prefer whichever exists.
-        BanList.Type banType = null;
-        try {
-            banType = (BanList.Type) enumConst(BanList.Type.class, "PROFILE");
-            if (banType == null) banType = (BanList.Type) enumConst(BanList.Type.class, "NAME");
-        } catch (Throwable ignored) {
+        // Ban lists have been reorganised twice. BanList.Type.NAME gave way to PROFILE in
+        // 1.20.4, and the whole nested BanList.Type enum gave way to a top-level
+        // BanListType during 1.21. Resolving the type class and its constants at runtime
+        // means one jar works either way, and works on forks that dropped the old names.
+        Class<?> banTypeClass = banTypeClass();
+        M_GET_BAN_LIST = banTypeClass == null ? null
+                : method(Bukkit.class, "getBanList", banTypeClass);
+        Object playerBanType = null;
+        Object ipBanType = null;
+        if (banTypeClass != null) {
+            playerBanType = enumConst(banTypeClass, "PROFILE");
+            if (playerBanType == null) playerBanType = enumConst(banTypeClass, "NAME");
+            ipBanType = enumConst(banTypeClass, "IP");
         }
-        BAN_TYPE_NAME = banType;
+        BAN_TYPE_PLAYER = playerBanType;
+        BAN_TYPE_IP = ipBanType;
+    }
+
+    /**
+     * The enum a {@code getBanList} call expects: the modern top-level {@code BanListType}
+     * where the server has one, otherwise the deprecated nested {@code BanList.Type}.
+     */
+    @SuppressWarnings("deprecation")
+    private static Class<?> banTypeClass() {
+        try {
+            return Class.forName("org.bukkit.BanListType");
+        } catch (Throwable ignored) {
+            // Older 1.21 builds only have the nested enum.
+        }
+        try {
+            return BanList.Type.class;
+        } catch (Throwable ignored) {
+            return null;
+        }
     }
 
     private Compat() {
@@ -387,9 +417,9 @@ public final class Compat {
      */
     @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
     public static boolean ban(String name, String reason, String source, Date expires) {
-        if (BAN_TYPE_NAME == null) return false;
+        BanList list = banList(BAN_TYPE_PLAYER);
+        if (list == null) return false;
         try {
-            BanList list = Bukkit.getBanList(BAN_TYPE_NAME);
             list.addBan(name, reason, expires, source);
             return true;
         } catch (Throwable ignored) {
@@ -399,9 +429,9 @@ public final class Compat {
 
     @SuppressWarnings({"rawtypes", "deprecation"})
     public static boolean unban(String name) {
-        if (BAN_TYPE_NAME == null) return false;
+        BanList list = banList(BAN_TYPE_PLAYER);
+        if (list == null) return false;
         try {
-            BanList list = Bukkit.getBanList(BAN_TYPE_NAME);
             list.pardon(name);
             return true;
         } catch (Throwable ignored) {
@@ -411,9 +441,9 @@ public final class Compat {
 
     @SuppressWarnings({"rawtypes", "deprecation"})
     public static boolean isBanned(String name) {
-        if (BAN_TYPE_NAME == null) return false;
+        BanList list = banList(BAN_TYPE_PLAYER);
+        if (list == null) return false;
         try {
-            BanList list = Bukkit.getBanList(BAN_TYPE_NAME);
             return list.isBanned(name);
         } catch (Throwable ignored) {
             return false;
@@ -422,8 +452,9 @@ public final class Compat {
 
     @SuppressWarnings({"unchecked", "rawtypes", "deprecation"})
     public static boolean banIp(String ip, String reason, String source, Date expires) {
+        BanList list = banList(BAN_TYPE_IP);
+        if (list == null) return false;
         try {
-            BanList list = Bukkit.getBanList(BanList.Type.IP);
             list.addBan(ip, reason, expires, source);
             return true;
         } catch (Throwable ignored) {
@@ -433,12 +464,24 @@ public final class Compat {
 
     @SuppressWarnings({"rawtypes", "deprecation"})
     public static boolean unbanIp(String ip) {
+        BanList list = banList(BAN_TYPE_IP);
+        if (list == null) return false;
         try {
-            BanList list = Bukkit.getBanList(BanList.Type.IP);
             list.pardon(ip);
             return true;
         } catch (Throwable ignored) {
             return false;
+        }
+    }
+
+    /** @return the requested ban list, or null when this server exposes none we understand */
+    @SuppressWarnings("rawtypes")
+    private static BanList banList(Object type) {
+        if (M_GET_BAN_LIST == null || type == null) return null;
+        try {
+            return (BanList) M_GET_BAN_LIST.invoke(null, type);
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 
