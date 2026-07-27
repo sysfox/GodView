@@ -130,10 +130,22 @@ map:
   enabled: true
   # 每 tick 最多取多少个区块快照（这是地图的主要开销来源，低配服设 1~2）
   chunks-per-tick: 4
-  # 允许从磁盘加载「未加载区块」来补全地图（有磁盘 IO，默认关）
-  load-unloaded: false
-  unloaded-per-second: 2
-  # 瓦片缓存
+
+  # 允许异步从磁盘加载「未加载区块」来补全地图。
+  # 关掉的话，地图只画得出此刻恰好加载着的那几十个区块——也就是玩家脚下那一小块，
+  # 其余全是空白。加载是异步的，并且按 unloaded-per-second 限速，不占主线程。
+  load-unloaded: true
+  unloaded-per-second: 8
+
+  # 把渲染好的瓦片写到 plugins/GodView/map/，重启后仍然存在。
+  # 这是地图能「越用越全」的关键：只有内存缓存的话，瓦片活过 tile-ttl-seconds 就没了，
+  # 想再看又得按 chunks-per-tick 的预算重新采一遍，永远攒不出一张完整的图。
+  # 只有完整的瓦片才落盘；缺区块的瓦片留在内存里，等区块补齐后自动重绘。
+  persist: true
+  # 落盘瓦片的最长寿命（天）。超过就当作过期删掉重画。
+  persist-days: 7
+
+  # 内存瓦片缓存
   tile-cache-mb: 24
   tile-ttl-seconds: 300
   # 每张瓦片包含多少区块（8 => 128×128 像素）

@@ -160,11 +160,28 @@ not qualify. See [Alerts](alerts.md#how-a-rule-works).
 
 ## The map is slow or blank
 
+### Only a small patch of the world renders
+
+Check `GET /api/map/status`:
+
+- `loadUnloaded: false` — the map can only draw chunks that are loaded right now, so
+  everything away from a player is void. Set `map.load-unloaded: true`. It defaults to true
+  as of 1.1.0; if yours says false, your `config.yml` predates that.
+- `persist: false` — tiles only live in memory for `tile-ttl-seconds`, so the map is
+  permanently rebuilding the same small area. Set `map.persist: true`.
+- `tilesIncomplete` climbing — tiles are rendering before their chunks arrive. They redraw
+  on their own; raise `map.unloaded-per-second` if it is slow.
+- `areasRefused` climbing — you are panning faster than `chunks-per-tick` can capture. The
+  panel retries; raise the budget if the server can afford it.
+
+Coverage grows as the panel is used. It is not a background pre-render — see
+[What it is not](map.md#what-it-is-not).
+
 ### Tiles never fill in
 
-Check Diagnostics, or `GET /api/map/status`. If `chunksSkippedUnloaded` is climbing, you are
-looking at terrain that is not loaded. Either go there in game, or set
-`map.load-unloaded: true` — which reads from disk, so it is off by default.
+If `chunksSkippedUnloaded` is climbing and `loadUnloaded` is true, the world is being read
+from disk slower than tiles are being asked for. Raise `map.unloaded-per-second`, or go
+there in game so the chunks are already loaded.
 
 ### The map is making the server lag
 

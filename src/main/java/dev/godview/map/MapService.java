@@ -38,23 +38,34 @@ import java.util.logging.Logger;
  * full 8x8 tile takes sixteen ticks — under a second — while costing well under a
  * millisecond of any individual tick.
  *
- * <p>Chunks that are not loaded are skipped unless {@code map.load-unloaded} is on, and
- * even then they are loaded asynchronously and rate-limited per second. Reading the world
- * off disk to draw a picture of somewhere nobody is standing is a real cost, and it should
- * be a deliberate choice rather than a default.
+ * <p><b>A tile is captured once, for every zoom level at once.</b> Downsampling is done
+ * from the same snapshots, because the alternative is what made the map feel broken: the
+ * capture queue was keyed by scale, so zooming out asked for the same ground again at
+ * sixteen times the tile count, and the budget never got anywhere. Rendering scale 1, 2
+ * and 4 together costs about 1.3x rendering scale 1 alone, and zooming is then free.
  *
- * <p>Rendered tiles are cached by bytes, not by count, because a tile's size varies by an
- * order of magnitude with terrain: an ocean tile compresses to a few kilobytes and a
- * jungle one does not.
+ * <p><b>Complete tiles are written to disk</b> via {@link TileStore}, so coverage
+ * accumulates across restarts instead of expiring with the memory cache. Tiles rendered
+ * while some of their chunks were unloaded are held in memory on a short lifetime and
+ * redrawn later, rather than being persisted with holes in them.
+ *
+ * <p>Chunks that are not loaded are pulled in asynchronously when {@code map.load-unloaded}
+ * is on. Reading the world off disk to draw somewhere nobody is standing is a real cost,
+ * which is why it is rate-limited per second and never blocks a tick — but with it off, the
+ * map can only ever show the handful of chunks that happen to be loaded right now.
  */
 public final class MapService {
 
     /** How long a request will wait for a tile to render before answering "not yet". */
     public static final long RENDER_WAIT_MS = 2_500L;
-    /** Tiles that may be queued for capture at once. */
-    private static final int QUEUE_CAPACITY = 64;
-    /** Downsampling factors the API accepts. */
+    /** Tile renders that may be queued for the worker pool at once. */
+    private static final int RENDER_QUEUE_CAPACITY = 256;
+    /** Tile areas that may be awaiting capture at once, across every viewer. */
+    private static final int MAX_PENDING_AREAS = 256;
+    /** Downsampling factors the API accepts. Every one is produced by a single capture. */
     private static final List<Integer> SCALES = List.of(1, 2, 4);
+    /** Lifetime for a tile that rendered with chunks missing, so it redraws soon. */
+    private static final long INCOMPLETE_TTL_MS = 20_000L;
 
     private final Plugin plugin;
     private final Logger log;
@@ -64,17 +75,20 @@ public final class MapService {
     private volatile boolean running;
 
     private final TileCache cache = new TileCache();
-    private final Map<TileKey, PendingTile> pending = new ConcurrentHashMap<>();
-    private final Deque<TileKey> queue = new ArrayDeque<>();
+    private volatile TileStore store;
+    private final Map<TileArea, PendingTile> pending = new ConcurrentHashMap<>();
+    private final Deque<TileArea> queue = new ArrayDeque<>();
 
     private BukkitTask captureTask;
     private ThreadPoolExecutor renderer;
 
     private final AtomicLong tilesRendered = new AtomicLong();
+    private final AtomicLong tilesIncomplete = new AtomicLong();
     private final AtomicLong chunksCaptured = new AtomicLong();
     private final AtomicLong cacheHits = new AtomicLong();
     private final AtomicLong cacheMisses = new AtomicLong();
     private final AtomicLong unloadedSkipped = new AtomicLong();
+    private final AtomicLong areasRefused = new AtomicLong();
     private long unloadedLoadedThisSecond;
     private long unloadedWindowStart;
 
@@ -85,21 +99,47 @@ public final class MapService {
         this.log = log;
     }
 
-    /** A tile's identity: which world, which tile coordinates, at which downsampling. */
+    /** A tile's identity in the caches: which world, where, at which downsampling. */
     public record TileKey(String world, int tileX, int tileZ, int scale) {
 
         public String describe() {
             return world + "/" + tileX + "," + tileZ + "@" + scale;
         }
+
+        public TileArea area() {
+            return new TileArea(world, tileX, tileZ);
+        }
     }
 
-    /** A tile being captured, and whoever is waiting for it. */
+    /**
+     * The ground a tile covers, independent of zoom.
+     *
+     * <p>Capture is keyed by this rather than by {@link TileKey}: the chunks behind a tile
+     * are the same at every scale, and queueing them once per zoom level is what made
+     * zooming out never finish.
+     */
+    public record TileArea(String world, int tileX, int tileZ) {
+
+        public TileKey at(int scale) {
+            return new TileKey(world, tileX, tileZ, scale);
+        }
+
+        public String describe() {
+            return world + "/" + tileX + "," + tileZ;
+        }
+    }
+
+    /** An area being captured, and whoever is waiting for it. */
     private static final class PendingTile {
         final Map<Integer, ChunkSnapshot> snapshots = new HashMap<>();
         final Object lock = new Object();
+        /** PNG per scale, filled in one pass once the capture finishes. */
+        final Map<Integer, byte[]> results = new ConcurrentHashMap<>();
         int captured;
         int expected;
-        volatile byte[] result;
+        int present;
+        volatile boolean complete;
+        volatile boolean done;
         volatile boolean failed;
     }
 
@@ -112,8 +152,10 @@ public final class MapService {
         }
         running = true;
 
+        cache.setBudget(config.map.tileCacheMb() * 1024L * 1024L);
+
         renderer = new ThreadPoolExecutor(1, 2, 30L, TimeUnit.SECONDS,
-                new ArrayBlockingQueue<>(QUEUE_CAPACITY),
+                new ArrayBlockingQueue<>(RENDER_QUEUE_CAPACITY),
                 runnable -> {
                     Thread t = new Thread(runnable, "GodView-MapRender");
                     t.setDaemon(true);
@@ -121,6 +163,16 @@ public final class MapService {
                     t.setPriority(Thread.NORM_PRIORITY - 2);
                     return t;
                 });
+
+        if (config.map.persist()) {
+            TileStore fresh = new TileStore(plugin.getDataFolder().toPath().resolve("map"),
+                    config.map.persistDays(), log);
+            store = fresh;
+            // Off the main thread: this walks a directory that may hold thousands of files.
+            renderer.execute(fresh::sweep);
+        } else {
+            store = null;
+        }
 
         captureTask = Bukkit.getScheduler().runTaskTimer(plugin, this::captureTick, 1L, 1L);
     }
@@ -138,8 +190,14 @@ public final class MapService {
         synchronized (queue) {
             queue.clear();
         }
+        // Anyone blocked in tile() is waiting on a lock nothing will ever notify now.
+        for (PendingTile tile : pending.values()) {
+            tile.failed = true;
+            wake(tile);
+        }
         pending.clear();
         cache.clear();
+        store = null;
     }
 
     public void reload(GodViewConfig newConfig) {
@@ -150,8 +208,28 @@ public final class MapService {
         cache.clear();
         cache.setBudget(newConfig.map.tileCacheMb() * 1024L * 1024L);
 
-        if (wasEnabled && !newConfig.map.enabled()) stop();
-        else if (!wasEnabled && newConfig.map.enabled()) start();
+        if (wasEnabled && !newConfig.map.enabled()) {
+            stop();
+            return;
+        }
+        if (!wasEnabled && newConfig.map.enabled()) {
+            start();
+            return;
+        }
+        // Still running: the stored geometry may no longer match what we would render now,
+        // and a half-old half-new map is worse than one that fills in again.
+        TileStore current = store;
+        if (running && current != null) {
+            current.setMaxAgeDays(newConfig.map.persistDays());
+            if (!newConfig.map.persist()) {
+                store = null;
+            }
+        } else if (running && newConfig.map.persist()) {
+            TileStore fresh = new TileStore(plugin.getDataFolder().toPath().resolve("map"),
+                    newConfig.map.persistDays(), log);
+            store = fresh;
+            if (renderer != null) renderer.execute(fresh::sweep);
+        }
     }
 
     public boolean isRunning() {
@@ -177,13 +255,13 @@ public final class MapService {
                 : metrics.profile().scaleBudget(config.map.chunksPerTick());
 
         for (int taken = 0; taken < budget; ) {
-            TileKey key;
+            TileArea area;
             synchronized (queue) {
-                key = queue.peekFirst();
+                area = queue.peekFirst();
             }
-            if (key == null) return;
+            if (area == null) return;
 
-            PendingTile tile = pending.get(key);
+            PendingTile tile = pending.get(area);
             if (tile == null) {
                 synchronized (queue) {
                     queue.pollFirst();
@@ -191,29 +269,30 @@ public final class MapService {
                 continue;
             }
 
-            taken += captureSome(key, tile, budget - taken);
+            taken += captureSome(area, tile, budget - taken);
 
             if (tile.captured >= tile.expected) {
                 synchronized (queue) {
                     queue.pollFirst();
                 }
-                submitRender(key, tile);
+                submitRender(area, tile);
             }
         }
     }
 
     /** @return how many chunks were snapshotted, which may be fewer than allowed */
-    private int captureSome(TileKey key, PendingTile tile, int allowance) {
-        World world = Bukkit.getWorld(key.world());
+    private int captureSome(TileArea area, PendingTile tile, int allowance) {
+        World world = Bukkit.getWorld(area.world());
         if (world == null) {
             tile.failed = true;
+            pending.remove(area);
             wake(tile);
             return 0;
         }
 
         int perTile = config.map.chunksPerTile();
-        int baseX = key.tileX() * perTile;
-        int baseZ = key.tileZ() * perTile;
+        int baseX = area.tileX() * perTile;
+        int baseZ = area.tileZ() * perTile;
         int taken = 0;
 
         synchronized (tile.lock) {
@@ -230,6 +309,7 @@ public final class MapService {
                         tile.snapshots.put(localX * perTile + localZ,
                                 world.getChunkAt(chunkX, chunkZ)
                                         .getChunkSnapshot(true, false, false));
+                        tile.present++;
                         chunksCaptured.incrementAndGet();
                     } catch (Throwable t) {
                         // A chunk that vanished mid-capture just renders as void.
@@ -282,39 +362,63 @@ public final class MapService {
 
     // ------------------------------------------------------------ render thread
 
-    private void submitRender(TileKey key, PendingTile tile) {
+    /**
+     * Renders one captured area at every scale, then caches and stores it.
+     *
+     * <p>The scales are rendered from the same snapshots rather than by scaling the
+     * finished image: the column walk shrinks by the square of the scale, so scales 2 and 4
+     * together cost about a third of scale 1, and each is drawn from real block data
+     * instead of from resampled pixels.
+     */
+    private void submitRender(TileArea area, PendingTile tile) {
         ThreadPoolExecutor executor = renderer;
         if (executor == null) {
             tile.failed = true;
+            pending.remove(area);
             wake(tile);
             return;
         }
 
-        World world = Bukkit.getWorld(key.world());
+        World world = Bukkit.getWorld(area.world());
         int minY = world == null ? -64 : world.getMinHeight();
+        int perTile = config.map.chunksPerTile();
+        boolean complete = tile.present >= tile.expected;
+        tile.complete = complete;
+        long fullTtl = config.map.tileTtlSeconds() * 1000L;
 
         try {
             executor.execute(() -> {
                 try {
-                    byte[] png = TileRenderer.render(tile.snapshots,
-                            config.map.chunksPerTile(), key.scale(), minY);
-                    cache.put(key, png, config.map.tileTtlSeconds() * 1000L);
-                    tile.result = png;
+                    for (int scale : SCALES) {
+                        byte[] png = TileRenderer.render(tile.snapshots, perTile, scale, minY);
+                        TileKey key = area.at(scale);
+                        cache.put(key, png, complete ? fullTtl : INCOMPLETE_TTL_MS, complete);
+                        tile.results.put(scale, png);
+
+                        TileStore target = store;
+                        // Only whole tiles go to disk. Persisting one with holes would make
+                        // the holes outlive the reason for them.
+                        if (complete && target != null) target.write(key, png);
+                    }
                     tilesRendered.incrementAndGet();
+                    if (!complete) tilesIncomplete.incrementAndGet();
                 } catch (Throwable t) {
                     tile.failed = true;
                     log.log(Level.WARNING, "GodView could not render map tile "
-                            + key.describe(), t);
+                            + area.describe(), t);
                 } finally {
-                    // Snapshots are large; drop them the moment the PNG exists.
+                    // Snapshots are large; drop them the moment the PNGs exist.
                     tile.snapshots.clear();
-                    pending.remove(key);
+                    tile.done = true;
+                    pending.remove(area);
                     wake(tile);
                 }
             });
         } catch (java.util.concurrent.RejectedExecutionException e) {
+            // The render pool is saturated. Fail this one; the panel asks again.
             tile.failed = true;
-            pending.remove(key);
+            tile.snapshots.clear();
+            pending.remove(area);
             wake(tile);
         }
     }
@@ -330,8 +434,13 @@ public final class MapService {
     /** What a tile request produced. */
     public sealed interface TileResult {
 
-        /** The PNG is ready. */
-        record Ready(byte[] png, boolean fromCache) implements TileResult {
+        /**
+         * The PNG is ready.
+         *
+         * @param complete false when some of the tile's chunks were not loaded, so the
+         *                 picture has holes and is worth asking for again later
+         */
+        record Ready(byte[] png, boolean fromCache, boolean complete) implements TileResult {
         }
 
         /** Still being captured; the caller should retry. */
@@ -368,23 +477,44 @@ public final class MapService {
         byte[] cached = cache.get(key);
         if (cached != null) {
             cacheHits.incrementAndGet();
-            return new TileResult.Ready(cached, true);
+            return new TileResult.Ready(cached, true, cache.isComplete(key));
+        }
+
+        // Disk before the tick budget. A tile somebody already looked at should cost a file
+        // read, not sixty-four chunk snapshots.
+        TileStore target = store;
+        if (target != null) {
+            byte[] stored = target.read(key);
+            if (stored != null) {
+                cache.put(key, stored, config.map.tileTtlSeconds() * 1000L);
+                cacheHits.incrementAndGet();
+                return new TileResult.Ready(stored, true, true);
+            }
         }
         cacheMisses.incrementAndGet();
 
+        TileArea area = key.area();
         int perTile = config.map.chunksPerTile();
-        PendingTile tile = pending.computeIfAbsent(key, k -> {
+        PendingTile existing = pending.get(area);
+        if (existing == null && pending.size() >= MAX_PENDING_AREAS) {
+            // A viewer panning fast can outrun the capture budget by orders of magnitude.
+            // Refusing here keeps the queue bounded; the panel retries with a backoff.
+            areasRefused.incrementAndGet();
+            return new TileResult.Pending(0, perTile * perTile);
+        }
+
+        PendingTile tile = pending.computeIfAbsent(area, a -> {
             PendingTile fresh = new PendingTile();
             fresh.expected = perTile * perTile;
             synchronized (queue) {
-                queue.addLast(k);
+                queue.addLast(a);
             }
             return fresh;
         });
 
         long deadline = System.currentTimeMillis() + RENDER_WAIT_MS;
         synchronized (tile.lock) {
-            while (tile.result == null && !tile.failed) {
+            while (!tile.done && !tile.failed) {
                 long remaining = deadline - System.currentTimeMillis();
                 if (remaining <= 0) break;
                 try {
@@ -396,18 +526,26 @@ public final class MapService {
             }
         }
 
-        if (tile.result != null) return new TileResult.Ready(tile.result, false);
+        byte[] rendered = tile.results.get(scale);
+        if (rendered != null) return new TileResult.Ready(rendered, false, tile.complete);
         if (tile.failed) return new TileResult.Unavailable("the tile could not be rendered");
         return new TileResult.Pending(tile.captured, tile.expected);
     }
 
-    /** Drops a tile from the cache so the next request redraws it. */
+    /** Drops a tile from every cache so the next request redraws it. */
     public void invalidate(String world, int tileX, int tileZ) {
-        for (int scale : SCALES) cache.remove(new TileKey(world, tileX, tileZ, scale));
+        TileStore target = store;
+        for (int scale : SCALES) {
+            TileKey key = new TileKey(world, tileX, tileZ, scale);
+            cache.remove(key);
+            if (target != null) target.remove(key);
+        }
     }
 
     public void invalidateWorld(String world) {
         cache.removeWorld(world);
+        TileStore target = store;
+        if (target != null) target.removeWorld(world);
     }
 
     // ------------------------------------------------------------------ status
@@ -418,6 +556,8 @@ public final class MapService {
             worlds.put(world.getName(), config.map.worldEnabled(world.getName()));
         }
 
+        TileStore target = store;
+
         w.obj()
                 .field("enabled", config.map.enabled())
                 .field("running", running)
@@ -427,12 +567,19 @@ public final class MapService {
                 .field("chunksPerTick", config.map.chunksPerTick())
                 .field("loadUnloaded", config.map.loadUnloaded())
                 .field("tilesRendered", tilesRendered.get())
+                .field("tilesIncomplete", tilesIncomplete.get())
                 .field("chunksCaptured", chunksCaptured.get())
                 .field("cacheHits", cacheHits.get())
                 .field("cacheMisses", cacheMisses.get())
                 .field("chunksSkippedUnloaded", unloadedSkipped.get())
+                .field("areasRefused", areasRefused.get())
                 .field("cacheBytes", cache.bytes())
                 .field("cacheTiles", cache.size())
+                .field("persist", target != null)
+                .field("diskTiles", target == null ? 0L : target.files())
+                .field("diskBytes", target == null ? 0L : target.bytes())
+                .field("diskHits", target == null ? 0L : target.hits())
+                .field("diskSurveyed", target == null || target.surveyed())
                 .field("queued", queuedTiles())
                 .field("worlds", worlds)
                 .end();
@@ -446,5 +593,10 @@ public final class MapService {
 
     public TileCache cache() {
         return cache;
+    }
+
+    /** Null when {@code map.persist} is off. */
+    public TileStore store() {
+        return store;
     }
 }

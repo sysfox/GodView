@@ -239,8 +239,10 @@ to 0 to disable console capture entirely.
 map:
   enabled: true
   chunks-per-tick: 4
-  load-unloaded: false
-  unloaded-per-second: 2
+  load-unloaded: true
+  unloaded-per-second: 8
+  persist: true
+  persist-days: 7
   tile-cache-mb: 24
   tile-ttl-seconds: 300
   chunks-per-tile: 8
@@ -249,6 +251,11 @@ map:
 
 `chunks-per-tick` is the number that matters — it is the map's entire cost to the tick
 loop. Set it to 1–2 on a low-end server. Details and the reasoning in [Map](map.md).
+
+`load-unloaded` and `persist` are what decide whether the map covers your world or only the
+few chunks loaded right now. Both default on as of 1.1.0; `persist` writes rendered tiles to
+`plugins/GodView/map/` so coverage survives restarts, and `load-unloaded` pulls missing
+chunks in asynchronously, rate-limited and never on the tick loop.
 
 `chunks-per-tile` must be a power of two between 1 and 32, because tile coordinates are
 derived by shifting chunk coordinates.

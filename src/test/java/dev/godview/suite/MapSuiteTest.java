@@ -6,6 +6,7 @@ import dev.godview.map.BlockColors;
 import dev.godview.map.MapService;
 import dev.godview.map.TileCache;
 import dev.godview.map.TileRenderer;
+import dev.godview.map.TileStore;
 import org.bukkit.ChunkSnapshot;
 import org.bukkit.Material;
 import javax.imageio.ImageIO;
@@ -33,6 +34,7 @@ class MapSuiteTest {
     void verifies() throws Exception {
         colors();
         cache();
+        store();
         renderer();
     }
 
@@ -191,6 +193,87 @@ class MapSuiteTest {
         check("expired tile is not served", expiring.get(a), null);
         check("expiry is counted", expiring.expirations(), 1L);
         check("expiry reclaims bytes", expiring.bytes(), 0L);
+
+        // Completeness: a tile drawn while chunks were unloaded is worth serving and worth
+        // asking for again, and the panel can only tell those apart if the cache remembers.
+        TileCache partial = new TileCache();
+        partial.put(a, new byte[10], 60_000, false);
+        partial.put(b, new byte[10], 60_000);
+        check("incomplete tile is still served", partial.get(a).length, 10);
+        check("incomplete tile is flagged", partial.isComplete(a), false);
+        check("complete tile is flagged", partial.isComplete(b), true);
+        check("an absent tile is not called incomplete", partial.isComplete(c), true);
+    }
+
+    // ------------------------------------------------------------------- store
+
+    /**
+     * The disk store is what makes coverage accumulate, so what matters here is that a
+     * tile written once comes back, that expiry is honoured, and that a world name cannot
+     * escape the store directory.
+     */
+    static void store() throws Exception {
+        System.out.println("\n========== tile store ==========");
+        java.nio.file.Path root = java.nio.file.Files.createTempDirectory("godview-tiles");
+        try {
+            TileStore store = new TileStore(root, 7, java.util.logging.Logger.getAnonymousLogger());
+            MapService.TileKey key = new MapService.TileKey("world", -3, 12, 2);
+
+            check("nothing stored yet", store.read(key), null);
+            store.write(key, new byte[]{1, 2, 3, 4});
+            byte[] back = store.read(key);
+            check("a stored tile comes back", back == null ? -1 : back.length, 4);
+            check("writes are counted", store.writes(), 1L);
+
+            // Different scales of the same ground are different files.
+            store.write(new MapService.TileKey("world", -3, 12, 1), new byte[]{9});
+            check("scales do not collide", store.read(key).length, 4);
+
+            store.remove(key);
+            check("a removed tile is gone", store.read(key), null);
+
+            // A world name arrives from a URL path. It must not be able to walk out of the
+            // store directory, and two names that sanitise alike must not share a folder.
+            MapService.TileKey hostile = new MapService.TileKey("../../etc", 0, 0, 1);
+            store.write(hostile, new byte[]{7});
+            java.nio.file.Path base = root.toAbsolutePath().normalize();
+            try (var walk = java.nio.file.Files.walk(root)) {
+                check("a traversing world name stays inside the store",
+                        walk.allMatch(p -> p.toAbsolutePath().normalize().startsWith(base)), true);
+            }
+            MapService.TileKey lookalike = new MapService.TileKey("......etc", 0, 0, 1);
+            check("names that sanitise alike do not collide", store.read(lookalike), null);
+
+            store.removeWorld("world");
+            check("removing a world drops its stored tiles",
+                    store.read(new MapService.TileKey("world", -3, 12, 1)), null);
+
+            // Expiry: a zero-day store keeps nothing, because everything is already older.
+            TileStore stale = new TileStore(root, 1, java.util.logging.Logger.getAnonymousLogger());
+            MapService.TileKey old = new MapService.TileKey("aged", 0, 0, 1);
+            stale.write(old, new byte[]{1});
+            java.nio.file.Path file;
+            try (var walk = java.nio.file.Files.walk(root)) {
+                file = walk.filter(java.nio.file.Files::isRegularFile)
+                        .filter(p -> p.toString().contains("aged"))
+                        .findFirst().orElseThrow();
+            }
+            java.nio.file.Files.setLastModifiedTime(file,
+                    java.nio.file.attribute.FileTime.fromMillis(
+                            System.currentTimeMillis() - 3L * 86_400_000L));
+            check("a tile past its lifetime is not served", stale.read(old), null);
+            check("and it is deleted", java.nio.file.Files.exists(file), false);
+        } finally {
+            try (var walk = java.nio.file.Files.walk(root)) {
+                walk.sorted(java.util.Comparator.reverseOrder()).forEach(p -> {
+                    try {
+                        java.nio.file.Files.deleteIfExists(p);
+                    } catch (Exception ignored) {
+                        // A temp directory that outlives the test is not a failure.
+                    }
+                });
+            }
+        }
     }
 
     // ---------------------------------------------------------------- renderer

@@ -45,31 +45,65 @@ because tile coordinates are derived by shifting chunk coordinates.
 `scale` on the request downsamples for zoomed-out views: `2` gives a quarter of the pixels,
 `4` a sixteenth. The panel switches automatically as you zoom.
 
-The cache is bounded by **bytes, not tile count**. An ocean tile compresses to a couple of
-kilobytes and a jungle village to fifty, so "keep 200 tiles" would mean anywhere between
-half a megabyte and ten — and `tile-cache-mb` would be a number that did not mean anything.
-Eviction is least-recently-used, which suits how a map is actually browsed.
+**Every scale is produced by one capture.** When an area is snapshotted, scales 1, 2 and 4
+are all rendered from the same chunk data and cached together. The column walk shrinks with
+the square of the scale, so the extra two cost about a third of the first — and zooming out
+then costs nothing at all. Before 1.1.0 the capture queue was keyed by scale, which meant
+zooming out asked for the same ground again at sixteen times the tile count and the budget
+never got anywhere.
+
+The memory cache is bounded by **bytes, not tile count**. An ocean tile compresses to a
+couple of kilobytes and a jungle village to fifty, so "keep 200 tiles" would mean anywhere
+between half a megabyte and ten — and `tile-cache-mb` would be a number that did not mean
+anything. Eviction is least-recently-used, which suits how a map is actually browsed.
 
 Tiles also expire after `tile-ttl-seconds`, because the world changes. A map showing a base
 that was demolished an hour ago is worse than a blank one.
+
+## Stored tiles
+
+```yaml
+map:
+  persist: true
+  persist-days: 7
+```
+
+Rendered tiles are written to `plugins/GodView/map/`, one directory per world, one file per
+tile and scale.
+
+This is what makes the map accumulate rather than resetting. With memory alone, a tile older
+than `tile-ttl-seconds` has to be re-captured at `chunks-per-tick`, and the map can never
+show more world than that budget produces inside one TTL — a small patch around wherever
+players happen to be standing. With a store, an area is captured once and stays: panning
+over ground somebody already looked at costs a file read, not sixty-four chunk snapshots.
+
+**Only complete tiles are stored.** A tile rendered while some of its chunks were unloaded
+has holes in it, and persisting that would make the holes permanent. Those stay in memory on
+a twenty-second lifetime and are redrawn once the chunks arrive; the response carries
+`X-GodView-Complete: false` so the panel knows to ask again.
+
+Files older than `persist-days` are deleted on read, and swept at startup on a background
+thread. Set `persist: false` to keep everything in memory, at the cost of the map never
+growing past the tick budget.
 
 ## Unloaded chunks
 
 ```yaml
 map:
-  load-unloaded: false
-  unloaded-per-second: 2
+  load-unloaded: true
+  unloaded-per-second: 8
 ```
 
-Off by default. Reading the world off disk to draw a picture of somewhere nobody is
-standing is a real cost, and it should be a deliberate choice.
+**On by default since 1.1.0.** With it off the map can only draw the chunks that happen to
+be loaded right now — a few dozen around each player — and everything else renders as void.
+That is not a subtle difference: it is the difference between a map and a smear.
 
-With it on, unloaded chunks are requested **asynchronously** and rate-limited to
-`unloaded-per-second`. Nothing waits for the result: the chunk becomes available for the
-next render of that tile, so it fills in a few seconds later rather than costing a tick
-spent blocking on disk.
+Unloaded chunks are requested **asynchronously** and rate-limited to `unloaded-per-second`.
+Nothing waits for the result: the chunk becomes available for the next render of that tile,
+so it fills in a few seconds later rather than costing a tick spent blocking on disk.
 
-Without it, unloaded chunks render as void — the dark blue-black background.
+Turn it off if the server's disk is the bottleneck. The map will then only ever show where
+people have been while the panel was open — which, with `persist` on, still accumulates.
 
 ## How a column is drawn
 
@@ -112,7 +146,14 @@ with `Retry-After: 1`. Ask again. That is what keeps a full-screen pan — dozen
 once — from pinning every HTTP worker while the capture queue drains a tick at a time.
 
 Ready tiles carry an ETag and a one-minute browser cache lifetime, so scrolling back over
-ground you have already seen costs a 304 rather than another render.
+ground you have already seen costs a 304 rather than another render. They also carry
+`X-GodView-Complete`; `false` means some chunks were missing, the browser lifetime drops to
+five seconds, and the tile is worth asking for again shortly.
+
+The panel requests tiles nearest-the-middle-first, a few at a time, and retries everything
+with a backoff. Every outcome is retryable — that is the point. Before 1.1.0 a tile that
+answered anything other than 200 or 202 was cached as a permanent blank and never requested
+again, so the map filled in one patch and stopped.
 
 ## Turning it off
 
@@ -136,8 +177,9 @@ from the world picker.
 ## What it is not
 
 This is a live operational view — where players are, where the entity hotspots are, what
-the terrain looks like right now. It is not a public web map: there is no browsable tile
-archive, no persistent render of unexplored terrain, and no anonymous access.
+the terrain looks like right now. It is not a public web map: there is no pre-rendered
+archive of terrain nobody has looked at, no tile pyramid beyond scale 4, and no anonymous
+access. Coverage grows as the panel is used, not as a background job.
 
 If you want a public map, run Dynmap or BlueMap alongside. They solve a different problem
 and solve it well.
