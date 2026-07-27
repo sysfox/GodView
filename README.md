@@ -73,6 +73,22 @@ Full walkthrough in [docs/installation.md](docs/installation.md).
 | [Troubleshooting](docs/troubleshooting.md) | When something is not working |
 | [Development](docs/development.md) | Building, the test suite, the panel toolchain |
 
+## 中文文档
+
+| | |
+|---|---|
+| [安装](docs/zh_CN/installation.md) | 安装、创建第一个账号、反向代理、TLS |
+| [配置](docs/zh_CN/configuration.md) | `config.yml` 的每个配置项，以及需要重启的项 |
+| [命令](docs/zh_CN/commands.md) | `/godview`，账号管理，一次性登录链接 |
+| [面板](docs/zh_CN/panel.md) | 每个视图以及如何解读 tick 条 |
+| [告警](docs/zh_CN/alerts.md) | 规则类型，持续时间和冷却，六种推送渠道 |
+| [地图](docs/zh_CN/map.md) | 世界地图如何渲染以及它对服务器的开销 |
+| [集成](docs/zh_CN/integrations.md) | GodView 从 LuckPerms、CoreProtect 等读取的内容 |
+| [REST API](docs/zh_CN/api.md) | 每个端点，权限，返回格式 |
+| [架构](docs/zh_CN/architecture.md) | 设计决策及其原因 |
+| [故障排除](docs/zh_CN/troubleshooting.md) | 按症状分类 |
+| [开发](docs/zh_CN/development.md) | 从源码构建，运行测试，面板开发 |
+
 ## Performance
 
 GodView is built for the servers that need monitoring most — the small, overloaded ones.
