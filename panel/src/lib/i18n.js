@@ -100,6 +100,7 @@ const zh = {
   'live.entities': '实体',
   'live.blockEntities': '方块实体',
 
+  'live.byPlugin': '卡顿归因（按插件）',
   'live.recentSpikes': '近期卡顿',
   'live.fromMemory': '来自内存',
   'live.when': '时间',
@@ -487,6 +488,7 @@ const en = {
   'live.entities': 'Entities',
   'live.blockEntities': 'Block entities',
 
+  'live.byPlugin': 'Spikes blamed on each plugin',
   'live.recentSpikes': 'Recent spikes',
   'live.fromMemory': 'from memory',
   'live.when': 'When',

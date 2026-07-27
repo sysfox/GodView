@@ -4,9 +4,10 @@ import { state, on, noteSpike } from '../lib/store.js';
 import { api } from '../lib/api.js';
 import { t } from '../lib/i18n.js';
 import { num, bytes, since, clock } from '../lib/format.js';
-import { COLOR, toPoints, TICK_WARN, TICK_BAD } from '../lib/charts.js';
+import { COLOR, toPoints, toBand, TICK_WARN, TICK_BAD } from '../lib/charts.js';
 import TickRibbon from '../components/TickRibbon.vue';
 import LineChart from '../components/LineChart.vue';
+import BarChart from '../components/BarChart.vue';
 import StatCard from '../components/StatCard.vue';
 import PanelCard from '../components/PanelCard.vue';
 import StatusTag from '../components/StatusTag.vue';
@@ -15,6 +16,7 @@ import EmptyState from '../components/EmptyState.vue';
 const tpsSeries = ref([]);
 const heapSeries = ref([]);
 const spikes = ref([]);
+const byPlugin = ref([]);
 const worstTick = computed(() => (state.ticks.length ? Math.max(...state.ticks) : 0));
 
 /* The hero is a sentence, not a number. At 2am "ShopGUI stalled the server for
@@ -70,8 +72,18 @@ const heapTone = computed(() => {
 async function loadCharts() {
   try {
     const data = await api.get('/api/series?names=tps,heap&window=3600000');
-    tpsSeries.value = [{ points: toPoints(data.series?.tps), color: COLOR.lichen }];
-    heapSeries.value = [{ points: toPoints(data.series?.heap), color: COLOR.lapis }];
+    tpsSeries.value = [{
+      points: toPoints(data.series?.tps),
+      band: toBand(data.series?.tps),
+      color: COLOR.lichen,
+      label: t('metrics.tps'),
+    }];
+    heapSeries.value = [{
+      points: toPoints(data.series?.heap),
+      band: toBand(data.series?.heap),
+      color: COLOR.lapis,
+      label: t('metrics.heap'),
+    }];
   } catch {
     // The rest of the view is still useful without history.
   }
@@ -82,8 +94,17 @@ async function loadSpikes() {
     const data = await api.get('/api/spikes?live=1&limit=12');
     spikes.value = (data.spikes ?? []).slice().reverse();
     if (spikes.value.length) noteSpike(spikes.value[0]);
+    // A per-plugin tally is the number an operator acts on: one 800 ms spike is
+    // bad luck, the same name forty times is a decision about that plugin.
+    byPlugin.value = Object.entries(data.byPlugin ?? {})
+      .map(([label, value]) => ({
+        label,
+        value,
+        color: label === 'Minecraft' ? COLOR.slate : COLOR.amber,
+      }));
   } catch {
     spikes.value = [];
+    byPlugin.value = [];
   }
 }
 
@@ -162,12 +183,17 @@ onBeforeUnmount(() => {
 
     <div class="grid grid--wide">
       <PanelCard :title="t('live.tpsHour')">
-        <LineChart :series="tpsSeries" :min="0" :max="20" :decimals="1" />
+        <LineChart :series="tpsSeries" :min="0" :max="20" :decimals="1" band />
       </PanelCard>
       <PanelCard :title="t('live.heapHour')">
-        <LineChart :series="heapSeries" :min="0" :max="100" />
+        <LineChart :series="heapSeries" :min="0" :max="100" unit="%" band />
       </PanelCard>
     </div>
+
+    <PanelCard v-if="byPlugin.length" :title="t('live.byPlugin')"
+               :aside="t('live.fromMemory')">
+      <BarChart :entries="byPlugin" />
+    </PanelCard>
 
     <div class="grid grid--wide">
       <PanelCard v-for="world in state.snapshot?.worlds ?? []" :key="world.name"
