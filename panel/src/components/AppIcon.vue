@@ -1,9 +1,9 @@
 <script setup>
 /* Hand-drawn 16px paths rather than an icon package.
  *
- * The panel loads no external assets and the whole set is seven glyphs, so a
- * dependency would cost more than it saves -- and these are drawn on the same
- * 16-unit grid as each other, which an off-the-shelf set rarely is. */
+ * The panel loads no external assets and the whole set is a handful of glyphs,
+ * so a dependency would cost more than it saves -- and these are drawn on the
+ * same 16-unit grid as each other, which an off-the-shelf set rarely is. */
 defineProps({ name: { type: String, required: true } });
 
 const paths = {
@@ -33,6 +33,15 @@ const paths = {
   out: [
     ['path', 'M10 4.5V3a1.5 1.5 0 0 0-1.5-1.5h-5A1.5 1.5 0 0 0 2 3v10a1.5 1.5 0 0 0 1.5 1.5h5A1.5 1.5 0 0 0 10 13v-1.5'],
     ['path', 'M6.5 8h8M12 5.5 14.5 8 12 10.5'],
+  ],
+  metrics: [
+    ['path', 'M2 13.5V2.5'],
+    ['path', 'M2 13.5h12'],
+    ['path', 'M4 11l3-3.5 2.5 2L14 4'],
+  ],
+  account: [
+    ['circle', null, { cx: 8, cy: 5.5, r: 3 }],
+    ['path', 'M2.5 14.5c0-3 2.5-5 5.5-5s5.5 2 5.5 5'],
   ],
 };
 </script>

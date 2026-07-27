@@ -2,10 +2,12 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { state, on, noteSpike } from '../lib/store.js';
 import { api } from '../lib/api.js';
+import { t } from '../lib/i18n.js';
 import { num, bytes, since, clock } from '../lib/format.js';
-import { COLOR, toPoints, TICK_WARN, TICK_BAD } from '../lib/charts.js';
+import { COLOR, toPoints, toBand, TICK_WARN, TICK_BAD } from '../lib/charts.js';
 import TickRibbon from '../components/TickRibbon.vue';
 import LineChart from '../components/LineChart.vue';
+import BarChart from '../components/BarChart.vue';
 import StatCard from '../components/StatCard.vue';
 import PanelCard from '../components/PanelCard.vue';
 import StatusTag from '../components/StatusTag.vue';
@@ -14,6 +16,7 @@ import EmptyState from '../components/EmptyState.vue';
 const tpsSeries = ref([]);
 const heapSeries = ref([]);
 const spikes = ref([]);
+const byPlugin = ref([]);
 const worstTick = computed(() => (state.ticks.length ? Math.max(...state.ticks) : 0));
 
 /* The hero is a sentence, not a number. At 2am "ShopGUI stalled the server for
@@ -21,23 +24,27 @@ const worstTick = computed(() => (state.ticks.length ? Math.max(...state.ticks) 
    the stats support it. */
 const verdict = computed(() => {
   const pulse = state.pulse;
-  if (!pulse) return { tone: 'ok', label: 'Starting', line: 'Waiting for the first sample.' };
+  if (!pulse) {
+    return { tone: 'ok', label: t('verdict.starting'), line: t('verdict.waiting') };
+  }
 
   let tone = 'ok';
-  let label = 'Healthy';
+  let label = t('verdict.healthy');
   if (pulse.tps1 < 15 || worstTick.value >= 500) {
     tone = 'bad';
-    label = 'Struggling';
+    label = t('verdict.struggling');
   } else if (pulse.tps1 < 19 || worstTick.value >= TICK_BAD) {
     tone = 'warn';
-    label = 'Slipping';
+    label = t('verdict.slipping');
   }
 
   return {
     tone,
     label,
-    line: `${num(Math.min(pulse.tps1, 20), 2)} TPS, worst tick `
-      + `${Math.round(worstTick.value)} ms in the last ten seconds.`,
+    line: t('live.verdictLine', {
+      tps: num(Math.min(pulse.tps1, 20), 2),
+      ms: Math.round(worstTick.value),
+    }),
   };
 });
 
@@ -65,8 +72,18 @@ const heapTone = computed(() => {
 async function loadCharts() {
   try {
     const data = await api.get('/api/series?names=tps,heap&window=3600000');
-    tpsSeries.value = [{ points: toPoints(data.series?.tps), color: COLOR.lichen }];
-    heapSeries.value = [{ points: toPoints(data.series?.heap), color: COLOR.lapis }];
+    tpsSeries.value = [{
+      points: toPoints(data.series?.tps),
+      band: toBand(data.series?.tps),
+      color: COLOR.lichen,
+      label: t('metrics.tps'),
+    }];
+    heapSeries.value = [{
+      points: toPoints(data.series?.heap),
+      band: toBand(data.series?.heap),
+      color: COLOR.lapis,
+      label: t('metrics.heap'),
+    }];
   } catch {
     // The rest of the view is still useful without history.
   }
@@ -77,8 +94,17 @@ async function loadSpikes() {
     const data = await api.get('/api/spikes?live=1&limit=12');
     spikes.value = (data.spikes ?? []).slice().reverse();
     if (spikes.value.length) noteSpike(spikes.value[0]);
+    // A per-plugin tally is the number an operator acts on: one 800 ms spike is
+    // bad luck, the same name forty times is a decision about that plugin.
+    byPlugin.value = Object.entries(data.byPlugin ?? {})
+      .map(([label, value]) => ({
+        label,
+        value,
+        color: label === 'Minecraft' ? COLOR.slate : COLOR.amber,
+      }));
   } catch {
     spikes.value = [];
+    byPlugin.value = [];
   }
 }
 
@@ -101,10 +127,12 @@ onBeforeUnmount(() => {
 <template>
   <div class="view">
     <div class="view__head">
-      <h1 class="view__title">Live</h1>
+      <h1 class="view__title">{{ t('live.title') }}</h1>
       <p class="view__note">
-        Profile {{ state.snapshot?.performance?.profile ?? '--' }}
-        <template v-if="state.pulse"> · updated {{ clock(state.pulse.at) }}</template>
+        {{ t('live.profile', { profile: state.snapshot?.performance?.profile ?? '--' }) }}
+        <template v-if="state.pulse">
+          {{ t('live.updated', { time: clock(state.pulse.at) }) }}
+        </template>
       </p>
     </div>
 
@@ -113,45 +141,59 @@ onBeforeUnmount(() => {
       <p class="verdict__line">
         {{ verdict.line }}
         <template v-if="blame">
-          <b>{{ blame.blame }}</b> stalled the server for
-          {{ Math.round(blame.durationMs) }} ms, {{ since(blame.at) }}.
+          {{ t('live.blame', {
+            plugin: blame.blame,
+            ms: Math.round(blame.durationMs),
+            ago: since(blame.at),
+          }) }}
         </template>
         <template v-else-if="verdict.tone === 'ok'">
-          No plugin has stalled the server recently.
+          {{ t('live.noStall') }}
         </template>
       </p>
 
       <TickRibbon :ticks="state.ticks" variant="hero" :bar-width="3" :gap="1" />
 
       <div class="ribbon-legend">
-        <span><i />under 50 ms</span>
-        <span class="is-warn"><i />over {{ TICK_WARN }} ms</span>
-        <span class="is-bad"><i />over {{ TICK_BAD }} ms</span>
+        <span><i />{{ t('live.legendUnder') }}</span>
+        <span class="is-warn"><i />{{ t('live.legendOver', { ms: TICK_WARN }) }}</span>
+        <span class="is-bad"><i />{{ t('live.legendOver', { ms: TICK_BAD }) }}</span>
       </div>
     </section>
 
     <div v-if="state.pulse" class="grid">
-      <StatCard label="Ticks per second" :value="num(Math.min(state.pulse.tps1, 20), 2)"
-                unit="/ 20" :tone="tpsTone"
-                :meta="`${num(state.pulse.overrunRatio * 100, 1)}% of ticks ran long`" />
-      <StatCard label="Milliseconds per tick" :value="num(state.pulse.mspt, 2)" unit="ms"
+      <StatCard :label="t('live.tps')" :value="num(Math.min(state.pulse.tps1, 20), 2)"
+                :unit="t('live.tpsUnit')" :tone="tpsTone"
+                :meta="t('live.tpsMeta', { percent: num(state.pulse.overrunRatio * 100, 1) })" />
+      <StatCard :label="t('live.mspt')" :value="num(state.pulse.mspt, 2)" unit="ms"
                 :tone="state.pulse.mspt > 45 ? 'bad' : state.pulse.mspt > 30 ? 'warn' : ''"
-                :meta="`p95 tick period ${num(state.pulse.tickPeriodP95, 0)} ms`" />
-      <StatCard label="Heap in use" :value="num(state.pulse.heapPercent, 0)" unit="%"
+                :meta="t('live.msptMeta', { ms: num(state.pulse.tickPeriodP95, 0) })" />
+      <StatCard :label="t('live.heap')" :value="num(state.pulse.heapPercent, 0)" unit="%"
                 :tone="heapTone"
-                :meta="`${bytes(state.pulse.heapUsed)} of ${bytes(state.pulse.heapMax)}`" />
-      <StatCard label="Players online" :value="state.pulse.players"
-                :meta="`${state.pulse.chunks} chunks, ${state.pulse.entities} entities`" />
+                :meta="t('live.heapMeta', {
+                  used: bytes(state.pulse.heapUsed),
+                  max: bytes(state.pulse.heapMax),
+                })" />
+      <StatCard :label="t('live.playersOnline')" :value="state.pulse.players"
+                :meta="t('live.playersMeta', {
+                  chunks: state.pulse.chunks,
+                  entities: state.pulse.entities,
+                })" />
     </div>
 
     <div class="grid grid--wide">
-      <PanelCard title="TPS, last hour">
-        <LineChart :series="tpsSeries" :min="0" :max="20" />
+      <PanelCard :title="t('live.tpsHour')">
+        <LineChart :series="tpsSeries" :min="0" :max="20" :decimals="1" band />
       </PanelCard>
-      <PanelCard title="Heap, last hour">
-        <LineChart :series="heapSeries" :min="0" :max="100" />
+      <PanelCard :title="t('live.heapHour')">
+        <LineChart :series="heapSeries" :min="0" :max="100" unit="%" band />
       </PanelCard>
     </div>
+
+    <PanelCard v-if="byPlugin.length" :title="t('live.byPlugin')"
+               :aside="t('live.fromMemory')">
+      <BarChart :entries="byPlugin" />
+    </PanelCard>
 
     <div class="grid grid--wide">
       <PanelCard v-for="world in state.snapshot?.worlds ?? []" :key="world.name"
@@ -159,14 +201,24 @@ onBeforeUnmount(() => {
         <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Metric</th><th class="right">Value</th></tr>
+              <tr><th>{{ t('live.metric') }}</th><th class="right">{{ t('live.value') }}</th></tr>
             </thead>
             <tbody>
-              <tr><td>Players</td><td class="right num">{{ world.players }}</td></tr>
-              <tr><td>Loaded chunks</td><td class="right num">{{ world.chunks }}</td></tr>
-              <tr><td>Entities</td><td class="right num">{{ world.entities }}</td></tr>
+              <tr>
+                <td>{{ t('live.players') }}</td>
+                <td class="right num">{{ world.players }}</td>
+              </tr>
+              <tr>
+                <td>{{ t('live.loadedChunks') }}</td>
+                <td class="right num">{{ world.chunks }}</td>
+              </tr>
+              <tr>
+                <td>{{ t('live.entities') }}</td>
+                <td class="right num">{{ world.entities }}</td>
+              </tr>
               <tr v-if="world.tileEntities >= 0">
-                <td>Block entities</td><td class="right num">{{ world.tileEntities }}</td>
+                <td>{{ t('live.blockEntities') }}</td>
+                <td class="right num">{{ world.tileEntities }}</td>
               </tr>
               <tr v-for="type in (world.topTypes ?? []).slice(0, 3)" :key="type.type">
                 <td>{{ type.type.toLowerCase().replace(/_/g, ' ') }}</td>
@@ -178,12 +230,15 @@ onBeforeUnmount(() => {
       </PanelCard>
     </div>
 
-    <PanelCard title="Recent spikes" aside="from memory">
+    <PanelCard :title="t('live.recentSpikes')" :aside="t('live.fromMemory')">
       <div v-if="spikes.length" class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>When</th><th class="right">Duration</th><th>Blamed on</th><th>Top frame</th>
+              <th>{{ t('live.when') }}</th>
+              <th class="right">{{ t('live.duration') }}</th>
+              <th>{{ t('live.blamedOn') }}</th>
+              <th>{{ t('live.topFrame') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -199,8 +254,7 @@ onBeforeUnmount(() => {
           </tbody>
         </table>
       </div>
-      <EmptyState v-else title="No spikes recorded"
-                  detail="Every tick has finished inside the threshold since the plugin started." />
+      <EmptyState v-else :title="t('live.noSpikes')" :detail="t('live.noSpikesDetail')" />
     </PanelCard>
   </div>
 </template>

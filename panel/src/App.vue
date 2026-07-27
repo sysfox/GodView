@@ -1,19 +1,21 @@
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { state, bootstrap, signIn, signOut, toast } from './lib/store.js';
+import { t, i18n, setLocale, LOCALES } from './lib/i18n.js';
 import { num } from './lib/format.js';
 import TickRibbon from './components/TickRibbon.vue';
 import AppIcon from './components/AppIcon.vue';
 
-const views = [
-  { path: '/live', name: 'Live', icon: 'live' },
-  { path: '/players', name: 'Players', icon: 'players' },
-  { path: '/console', name: 'Console', icon: 'console' },
-  { path: '/events', name: 'Events', icon: 'events' },
-  { path: '/map', name: 'Map', icon: 'map' },
-  { path: '/alerts', name: 'Alerts', icon: 'alerts' },
-  { path: '/diagnostics', name: 'Diagnostics', icon: 'diagnostics' },
-];
+const views = computed(() => [
+  { path: '/live', name: t('nav.live'), icon: 'live' },
+  { path: '/metrics', name: t('nav.metrics'), icon: 'metrics' },
+  { path: '/players', name: t('nav.players'), icon: 'players' },
+  { path: '/console', name: t('nav.console'), icon: 'console' },
+  { path: '/events', name: t('nav.events'), icon: 'events' },
+  { path: '/map', name: t('nav.map'), icon: 'map' },
+  { path: '/alerts', name: t('nav.alerts'), icon: 'alerts' },
+  { path: '/diagnostics', name: t('nav.diagnostics'), icon: 'diagnostics' },
+]);
 
 const user = ref('');
 const password = ref('');
@@ -41,7 +43,7 @@ async function submit() {
 
 async function leave() {
   await signOut();
-  toast('Signed out.');
+  toast(t('toast.signedOut'));
 }
 
 onMounted(bootstrap);
@@ -58,23 +60,20 @@ onMounted(bootstrap);
         </div>
         <h1 class="gate__title">GodView</h1>
         <p class="gate__sub">
-          {{ state.configured
-            ? 'Sign in to watch the server.'
-            : 'No account exists yet. Create one in the server console.' }}
+          {{ state.configured ? t('gate.subtitle') : t('gate.unconfigured') }}
         </p>
 
         <p v-if="!state.configured" class="gate__error">
-          Run <code>/godview user add &lt;name&gt; admin</code> on the server, then sign in
-          with the password it prints.
+          {{ t('gate.hint', { command: '/godview user add <name> admin' }) }}
         </p>
 
         <label class="field">
-          <span class="field__label">Account</span>
+          <span class="field__label">{{ t('gate.account') }}</span>
           <input v-model="user" class="field__input" autocomplete="username"
                  autocapitalize="none" spellcheck="false" required>
         </label>
         <label class="field">
-          <span class="field__label">Password</span>
+          <span class="field__label">{{ t('gate.password') }}</span>
           <input v-model="password" class="field__input" type="password"
                  autocomplete="current-password" required>
         </label>
@@ -82,49 +81,64 @@ onMounted(bootstrap);
         <p v-if="error" class="gate__error" role="alert">{{ error }}</p>
 
         <button class="btn btn--primary btn--wide" type="submit" :disabled="busy">
-          {{ busy ? 'Signing in' : 'Sign in' }}
+          {{ busy ? t('gate.signingIn') : t('gate.signIn') }}
         </button>
+
+        <div class="gate__lang">
+          <button v-for="option in LOCALES" :key="option.id" type="button"
+                  class="langpick" :class="{ 'is-active': i18n.locale === option.id }"
+                  @click="setLocale(option.id)">{{ option.label }}</button>
+        </div>
       </form>
     </div>
 
     <div v-else class="shell">
       <header class="topbar">
-        <RouterLink to="/live" class="topbar__brand" aria-label="GodView, live view">
+        <RouterLink to="/live" class="topbar__brand" :aria-label="t('gate.brandLabel')">
           <TickRibbon :ticks="state.ticks" variant="brand" />
           <span class="topbar__word">GodView</span>
         </RouterLink>
 
         <dl class="vitals">
           <div class="vital">
-            <dt>TPS</dt>
+            <dt>{{ t('topbar.tps') }}</dt>
             <dd class="num">{{ state.pulse ? num(Math.min(state.pulse.tps1, 20), 2) : '--' }}</dd>
           </div>
           <div class="vital">
-            <dt>MSPT</dt>
+            <dt>{{ t('topbar.mspt') }}</dt>
             <dd class="num">{{ state.pulse ? num(state.pulse.mspt, 1) : '--' }}</dd>
           </div>
           <div class="vital">
-            <dt>Heap</dt>
+            <dt>{{ t('topbar.heap') }}</dt>
             <dd class="num">{{ state.pulse ? `${num(state.pulse.heapPercent, 0)}%` : '--' }}</dd>
           </div>
           <div class="vital">
-            <dt>Players</dt>
+            <dt>{{ t('topbar.players') }}</dt>
             <dd class="num">{{ state.pulse ? state.pulse.players : '--' }}</dd>
           </div>
         </dl>
 
         <div class="topbar__end">
-          <span class="link-state" :data-state="state.link" title="Live connection">
+          <span class="link-state" :data-state="state.link" :title="t('topbar.link')">
             <span class="link-state__dot" />
-            {{ state.link === 'live' ? 'Live' : state.link === 'lost' ? 'Reconnecting' : 'Connecting' }}
+            {{ state.link === 'live' ? t('topbar.live')
+              : state.link === 'lost' ? t('topbar.lost') : t('topbar.connecting') }}
           </span>
+
+          <select class="langswitch" :value="i18n.locale" :aria-label="t('lang.label')"
+                  @change="setLocale($event.target.value)">
+            <option v-for="option in LOCALES" :key="option.id" :value="option.id">
+              {{ option.label }}
+            </option>
+          </select>
+
           <button class="btn btn--ghost" type="button" @click="leave">
-            <AppIcon name="out" /> Sign out
+            <AppIcon name="out" /> {{ t('topbar.signOut') }}
           </button>
         </div>
       </header>
 
-      <nav class="rail" aria-label="Views">
+      <nav class="rail" :aria-label="t('nav.label')">
         <RouterLink v-for="view in views" :key="view.path" :to="view.path"
                     class="rail__item" active-class="is-active">
           <AppIcon :name="view.icon" />

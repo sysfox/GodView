@@ -125,12 +125,18 @@ public final class MapRoutes {
                     + '-' + ready.png().length + "\"";
             if (etag.equals(exchange.header("If-None-Match"))) {
                 exchange.setHeader("ETag", etag);
+                exchange.setHeader("X-GodView-Complete", String.valueOf(ready.complete()));
                 exchange.send(304, new byte[0], false);
                 return;
             }
             exchange.setHeader("ETag", etag);
-            exchange.setHeader("Cache-Control", "private, max-age=" + TILE_CACHE_SECONDS);
+            // A tile drawn with chunks missing must not sit in the browser cache for a
+            // minute; the panel asks for it again shortly and should get the fuller one.
+            exchange.setHeader("Cache-Control", ready.complete()
+                    ? "private, max-age=" + TILE_CACHE_SECONDS
+                    : "private, max-age=5");
             exchange.setHeader("X-GodView-Cache", ready.fromCache() ? "hit" : "miss");
+            exchange.setHeader("X-GodView-Complete", String.valueOf(ready.complete()));
             // PNG is already compressed; gzip would add CPU and bytes.
             exchange.bytes(200, "image/png", ready.png(), false);
             return;

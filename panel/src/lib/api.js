@@ -5,6 +5,8 @@
  * putting it in localStorage would outlive the session it belongs to and leave
  * a shared browser holding a token for somebody else's account. */
 
+import { t } from './i18n.js';
+
 let csrf = null;
 let onUnauthenticated = () => {};
 
@@ -41,12 +43,12 @@ async function request(method, path, body) {
   } catch {
     // The panel is served by the server it monitors, so a network failure here
     // usually means that server has gone away.
-    throw new ApiError(0, 'unreachable', 'The server is not responding.');
+    throw new ApiError(0, 'unreachable', t('common.unreachable'));
   }
 
   if (response.status === 401) {
     onUnauthenticated();
-    throw new ApiError(401, 'unauthenticated', 'Your session ended. Sign in again.');
+    throw new ApiError(401, 'unauthenticated', t('common.sessionEnded'));
   }
   if (response.status === 204) return null;
 

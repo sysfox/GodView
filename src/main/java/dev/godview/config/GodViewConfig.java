@@ -124,7 +124,8 @@ public final class GodViewConfig {
 
     public record MapSettings(boolean enabled, int chunksPerTick, boolean loadUnloaded,
                               int unloadedPerSecond, int tileCacheMb, int tileTtlSeconds,
-                              int chunksPerTile, List<String> disabledWorlds) {
+                              int chunksPerTile, boolean persist, int persistDays,
+                              List<String> disabledWorlds) {
 
         public boolean worldEnabled(String worldName) {
             return enabled && !disabledWorlds.contains(worldName);
@@ -289,11 +290,15 @@ public final class GodViewConfig {
         return new MapSettings(
                 s.getBoolean("enabled", true),
                 clamp(s.getInt("chunks-per-tick", 4), 1, 64, "map.chunks-per-tick"),
-                s.getBoolean("load-unloaded", false),
-                clamp(s.getInt("unloaded-per-second", 2), 1, 64, "map.unloaded-per-second"),
+                // On by default since 1.1.0. With it off the map can only ever draw the
+                // chunks that happen to be loaded, which reads as "the map is broken".
+                s.getBoolean("load-unloaded", true),
+                clamp(s.getInt("unloaded-per-second", 8), 1, 64, "map.unloaded-per-second"),
                 clamp(s.getInt("tile-cache-mb", 24), 1, 1024, "map.tile-cache-mb"),
                 clamp(s.getInt("tile-ttl-seconds", 300), 1, 86400, "map.tile-ttl-seconds"),
                 chunksPerTile,
+                s.getBoolean("persist", true),
+                clamp(s.getInt("persist-days", 7), 1, 3650, "map.persist-days"),
                 List.copyOf(s.getStringList("disabled-worlds")));
     }
 

@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { api } from '../lib/api.js';
 import { can, toast } from '../lib/store.js';
+import { t } from '../lib/i18n.js';
 import { duration } from '../lib/format.js';
 import PanelCard from '../components/PanelCard.vue';
 import StatusTag from '../components/StatusTag.vue';
@@ -34,8 +35,10 @@ function healthTone(player) {
    about giving the operator the reason field rather than about safety. */
 async function act(player, action) {
   const reason = window.prompt(
-    action === 'kick' ? `Reason for kicking ${player.name}` : `Reason for banning ${player.name}`,
-    action === 'kick' ? 'Kicked by an operator' : 'Banned by an operator');
+    action === 'kick'
+      ? t('players.kickReason', { name: player.name })
+      : t('players.banReason', { name: player.name }),
+    action === 'kick' ? t('players.kickDefault') : t('players.banDefault'));
   if (reason === null) return;
 
   pending.value = `${player.name}:${action}`;
@@ -43,7 +46,7 @@ async function act(player, action) {
     const result = await api.post(
       `/api/players/${encodeURIComponent(player.name)}/${action}`,
       { reason, confirm: true });
-    toast(result.message ?? 'Done', 'good');
+    toast(result.message ?? t('toast.done'), 'good');
     await load();
   } catch (error) {
     toast(error.message, 'bad');
@@ -63,25 +66,25 @@ onBeforeUnmount(() => clearInterval(timer));
 <template>
   <div class="view">
     <div class="view__head">
-      <h1 class="view__title">Players</h1>
-      <p class="view__note">{{ players.length }} online</p>
+      <h1 class="view__title">{{ t('players.title') }}</h1>
+      <p class="view__note">{{ t('players.online', { count: players.length }) }}</p>
     </div>
 
-    <EmptyState v-if="failure" title="Could not load players" :detail="failure" />
+    <EmptyState v-if="failure" :title="t('players.failure')" :detail="failure" />
 
-    <PanelCard v-else-if="players.length" title="Online now">
+    <PanelCard v-else-if="players.length" :title="t('players.onlineNow')">
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>Player</th>
-              <th>Ping</th>
-              <th>Health</th>
-              <th>Mode</th>
-              <th>Position</th>
-              <th>Played</th>
-              <th v-if="showAddresses">Address</th>
-              <th v-if="can('player_action')" class="right">Actions</th>
+              <th>{{ t('players.player') }}</th>
+              <th>{{ t('players.ping') }}</th>
+              <th>{{ t('players.health') }}</th>
+              <th>{{ t('players.mode') }}</th>
+              <th>{{ t('players.position') }}</th>
+              <th>{{ t('players.played') }}</th>
+              <th v-if="showAddresses">{{ t('players.address') }}</th>
+              <th v-if="can('player_action')" class="right">{{ t('players.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -106,10 +109,10 @@ onBeforeUnmount(() => clearInterval(timer));
               <td v-if="can('player_action')" class="right">
                 <button class="btn btn--sm" type="button"
                         :disabled="pending === `${player.name}:kick`"
-                        @click="act(player, 'kick')">Kick</button>
+                        @click="act(player, 'kick')">{{ t('players.kick') }}</button>
                 <button class="btn btn--sm btn--danger" type="button"
                         :disabled="pending === `${player.name}:ban`"
-                        @click="act(player, 'ban')">Ban</button>
+                        @click="act(player, 'ban')">{{ t('players.ban') }}</button>
               </td>
             </tr>
           </tbody>
@@ -117,7 +120,6 @@ onBeforeUnmount(() => clearInterval(timer));
       </div>
     </PanelCard>
 
-    <EmptyState v-else title="Nobody is online"
-                detail="Players appear here as soon as they join." />
+    <EmptyState v-else :title="t('players.nobody')" :detail="t('players.nobodyDetail')" />
   </div>
 </template>

@@ -28,7 +28,11 @@ public final class TileCache {
     private long evictions;
     private long expirations;
 
-    private record Entry(byte[] png, long expiresAt) {
+    /**
+     * @param complete false when the tile was drawn with some of its chunks unloaded, so
+     *                 it has holes in it and the panel should ask again later
+     */
+    private record Entry(byte[] png, long expiresAt, boolean complete) {
 
         boolean expired(long now) {
             return now >= expiresAt;
@@ -54,7 +58,24 @@ public final class TileCache {
         return entry.png();
     }
 
+    /**
+     * Whether the resident tile was drawn from every one of its chunks.
+     *
+     * <p>Separate from {@link #get} so the common path stays a byte array. An absent tile
+     * reports true: the caller has nothing to redraw, so "incomplete" would be a lie about
+     * a picture that does not exist.
+     */
+    public synchronized boolean isComplete(MapService.TileKey key) {
+        Entry entry = entries.get(key);
+        return entry == null || entry.complete();
+    }
+
     public synchronized void put(MapService.TileKey key, byte[] png, long ttlMillis) {
+        put(key, png, ttlMillis, true);
+    }
+
+    public synchronized void put(MapService.TileKey key, byte[] png, long ttlMillis,
+                                 boolean complete) {
         // A single tile larger than the whole budget would evict everything and then
         // itself; refusing it keeps the cache useful for the tiles that do fit.
         if (png.length > budgetBytes) return;
@@ -65,7 +86,7 @@ public final class TileCache {
         // A non-positive TTL means "no lifetime configured", not "expire immediately"; any
         // positive value is honoured exactly, so the parameter means what it says.
         long lifetime = ttlMillis > 0 ? ttlMillis : 60_000L;
-        entries.put(key, new Entry(png, System.currentTimeMillis() + lifetime));
+        entries.put(key, new Entry(png, System.currentTimeMillis() + lifetime, complete));
         bytes += png.length;
         evictToBudget();
     }

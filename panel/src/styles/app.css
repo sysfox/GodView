@@ -132,6 +132,41 @@ button { font: inherit; }
 
 .field__input:focus { border-color: var(--lapis); outline: none; }
 
+.field__hint { display: block; margin-top: .3rem; font-size: .75rem; color: var(--dim); }
+
+/* The switcher on the sign-in card is two words, not a select: somebody who
+   cannot read the page yet should not have to open a menu to fix that. */
+.gate__lang { display: flex; justify-content: center; gap: .25rem; margin-top: 1.25rem; }
+
+.langpick {
+  padding: .2rem .5rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--dim);
+  font: inherit;
+  font-size: .75rem;
+  cursor: pointer;
+}
+
+.langpick:hover { color: var(--calcite); }
+.langpick.is-active { color: var(--calcite); border-color: var(--vein); background: var(--tuff); }
+
+.langswitch {
+  padding: .2rem .35rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--ash);
+  font: inherit;
+  font-size: .75rem;
+  cursor: pointer;
+}
+
+.langswitch:hover { border-color: var(--vein); color: var(--calcite); }
+.langswitch:focus { border-color: var(--lapis); outline: none; }
+.langswitch option { background: var(--deepslate); color: var(--calcite); }
+
 /* ---------------------------------------------------------------- shell --- */
 
 .shell {
@@ -381,6 +416,43 @@ button { font: inherit; }
 .stat--bad .stat__value { color: var(--redstone); }
 
 .chart { width: 100%; height: 120px; display: block; }
+.chart--bars { height: auto; }
+
+.chartwrap { position: relative; }
+
+/* The readout follows the pointer rather than living in a corner: at 120 pixels
+   tall, a fixed tooltip is either on top of the line or too far from it. */
+.chartip {
+  position: absolute;
+  top: .25rem;
+  min-width: 7rem;
+  padding: .35rem .5rem;
+  background: var(--deepslate);
+  border: 1px solid var(--vein);
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+  font-size: .75rem;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.chartip__at { color: var(--dim); font-family: var(--mono); margin-bottom: .2rem; }
+.chartip__row { display: flex; align-items: center; gap: .35rem; }
+.chartip__row i { width: 8px; height: 2px; border-radius: 1px; flex-shrink: 0; }
+.chartip__row span { color: var(--ash); }
+.chartip__row b { margin-left: auto; font-family: var(--mono); font-weight: 500; }
+
+.chartlegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  margin-top: .5rem;
+  font-size: .75rem;
+  color: var(--ash);
+}
+
+.chartlegend span { display: inline-flex; align-items: center; gap: .35rem; }
+.chartlegend i { width: 10px; height: 2px; border-radius: 1px; }
 
 /* ---------------------------------------------------------------- table --- */
 
