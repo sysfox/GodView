@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { api } from '../lib/api.js';
+import { t } from '../lib/i18n.js';
 import { num, bytes, duration } from '../lib/format.js';
 import PanelCard from '../components/PanelCard.vue';
 import StatusTag from '../components/StatusTag.vue';
@@ -38,46 +39,53 @@ onBeforeUnmount(() => clearInterval(timer));
 <template>
   <div class="view">
     <div class="view__head">
-      <h1 class="view__title">Diagnostics</h1>
-      <p class="view__note">What GodView itself is doing.</p>
+      <h1 class="view__title">{{ t('diag.title') }}</h1>
+      <p class="view__note">{{ t('diag.note') }}</p>
     </div>
 
-    <EmptyState v-if="failure" title="Could not load diagnostics" :detail="failure" />
+    <EmptyState v-if="failure" :title="t('diag.failure')" :detail="failure" />
 
     <div v-else-if="system" class="grid grid--wide">
-      <PanelCard title="Server">
+      <PanelCard :title="t('diag.server')">
         <div class="table-wrap">
           <table>
             <tbody>
               <tr>
-                <td>Software</td>
+                <td>{{ t('diag.software') }}</td>
                 <td class="right num">{{ system.server.brand }} {{ system.server.version }}</td>
               </tr>
               <tr>
-                <td>Java</td>
+                <td>{{ t('diag.java') }}</td>
                 <td class="right num wrap">{{ system.jvm.java }} · {{ system.jvm.vm }}</td>
               </tr>
               <tr>
-                <td>Host</td>
+                <td>{{ t('diag.host') }}</td>
                 <td class="right num wrap">
-                  {{ system.jvm.os }}, {{ system.jvm.processors }} cores
+                  {{ system.jvm.os }}, {{ t('diag.cores', { count: system.jvm.processors }) }}
                 </td>
               </tr>
-              <tr><td>Uptime</td><td class="right num">{{ duration(system.jvm.uptimeMs) }}</td></tr>
               <tr>
-                <td>Load average</td>
+                <td>{{ t('diag.uptime') }}</td>
+                <td class="right num">{{ duration(system.jvm.uptimeMs) }}</td>
+              </tr>
+              <tr>
+                <td>{{ t('diag.load') }}</td>
                 <td class="right num">
-                  {{ system.jvm.loadAverage >= 0 ? num(system.jvm.loadAverage, 2) : 'unavailable' }}
+                  {{ system.jvm.loadAverage >= 0
+                    ? num(system.jvm.loadAverage, 2) : t('diag.unavailable') }}
                 </td>
               </tr>
               <tr>
-                <td>Heap</td>
+                <td>{{ t('diag.heap') }}</td>
                 <td class="right num">
-                  {{ bytes(system.jvm.heapUsed) }} of {{ bytes(system.jvm.heapMax) }}
+                  {{ t('diag.of', {
+                    used: bytes(system.jvm.heapUsed),
+                    max: bytes(system.jvm.heapMax),
+                  }) }}
                 </td>
               </tr>
               <tr>
-                <td>Non-heap</td>
+                <td>{{ t('diag.nonHeap') }}</td>
                 <td class="right num">{{ bytes(system.jvm.nonHeapUsed) }}</td>
               </tr>
             </tbody>
@@ -85,37 +93,55 @@ onBeforeUnmount(() => clearInterval(timer));
         </div>
       </PanelCard>
 
-      <PanelCard title="GodView" :aside="`v${system.godview.version}`">
+      <PanelCard :title="t('diag.godview')" :aside="`v${system.godview.version}`">
         <div class="table-wrap">
           <table>
             <tbody>
-              <tr><td>Profile</td><td class="right num">{{ system.godview.profile }}</td></tr>
-              <tr><td>Live viewers</td><td class="right num">{{ system.godview.viewers }}</td></tr>
               <tr>
-                <td>Stream frames</td>
+                <td>{{ t('diag.profile') }}</td>
+                <td class="right num">{{ system.godview.profile }}</td>
+              </tr>
+              <tr>
+                <td>{{ t('diag.viewers') }}</td>
+                <td class="right num">{{ system.godview.viewers }}</td>
+              </tr>
+              <tr>
+                <td>{{ t('diag.streamFrames') }}</td>
                 <td class="right num">
-                  {{ system.godview.streamFramesPublished }} sent,
-                  {{ system.godview.streamFramesDropped }} dropped
+                  {{ t('diag.streamFramesValue', {
+                    sent: system.godview.streamFramesPublished,
+                    dropped: system.godview.streamFramesDropped,
+                  }) }}
                 </td>
               </tr>
               <tr>
-                <td>HTTP requests</td>
+                <td>{{ t('diag.httpRequests') }}</td>
                 <td class="right num">
-                  {{ system.godview.httpRequests }} ({{ system.godview.httpErrors }} failed)
-                </td>
-              </tr>
-              <tr><td>Sessions</td><td class="right num">{{ system.godview.sessions }}</td></tr>
-              <tr>
-                <td>Sign-in failures</td>
-                <td class="right num">
-                  {{ system.godview.loginFailures }} ({{ system.godview.loginLockouts }} lockouts)
+                  {{ t('diag.httpRequestsValue', {
+                    total: system.godview.httpRequests,
+                    errors: system.godview.httpErrors,
+                  }) }}
                 </td>
               </tr>
               <tr>
-                <td>Console capture</td>
+                <td>{{ t('diag.sessions') }}</td>
+                <td class="right num">{{ system.godview.sessions }}</td>
+              </tr>
+              <tr>
+                <td>{{ t('diag.loginFailures') }}</td>
+                <td class="right num">
+                  {{ t('diag.loginFailuresValue', {
+                    failures: system.godview.loginFailures,
+                    lockouts: system.godview.loginLockouts,
+                  }) }}
+                </td>
+              </tr>
+              <tr>
+                <td>{{ t('diag.consoleCapture') }}</td>
                 <td class="right num">
                   {{ system.godview.consoleAttached
-                    ? `${system.godview.consoleLines} lines` : 'off' }}
+                    ? t('diag.consoleLines', { count: system.godview.consoleLines })
+                    : t('diag.consoleOff') }}
                 </td>
               </tr>
             </tbody>
@@ -123,21 +149,21 @@ onBeforeUnmount(() => clearInterval(timer));
         </div>
       </PanelCard>
 
-      <PanelCard v-if="system.storage" title="Storage" :aside="system.storage.kind">
+      <PanelCard v-if="system.storage" :title="t('diag.storage')" :aside="system.storage.kind">
         <div class="table-wrap">
           <table>
             <tbody>
-              <tr><td>Events</td><td class="right num">{{ system.storage.events }}</td></tr>
-              <tr><td>Metrics</td><td class="right num">{{ system.storage.metrics }}</td></tr>
-              <tr><td>Spikes</td><td class="right num">{{ system.storage.spikes }}</td></tr>
-              <tr><td>Audit</td><td class="right num">{{ system.storage.audit }}</td></tr>
-              <tr><td>Alerts</td><td class="right num">{{ system.storage.alerts }}</td></tr>
+              <tr><td>{{ t('diag.events') }}</td><td class="right num">{{ system.storage.events }}</td></tr>
+              <tr><td>{{ t('diag.metrics') }}</td><td class="right num">{{ system.storage.metrics }}</td></tr>
+              <tr><td>{{ t('diag.spikes') }}</td><td class="right num">{{ system.storage.spikes }}</td></tr>
+              <tr><td>{{ t('diag.audit') }}</td><td class="right num">{{ system.storage.audit }}</td></tr>
+              <tr><td>{{ t('diag.alerts') }}</td><td class="right num">{{ system.storage.alerts }}</td></tr>
               <tr>
-                <td>On disk</td>
+                <td>{{ t('diag.onDisk') }}</td>
                 <td class="right num">{{ bytes(system.storage.fileSizeBytes) }}</td>
               </tr>
               <tr>
-                <td>Queued / dropped</td>
+                <td>{{ t('diag.queuedDropped') }}</td>
                 <td class="right num">
                   {{ system.storage.queued }} / {{ system.storage.dropped }}
                 </td>
@@ -147,15 +173,18 @@ onBeforeUnmount(() => clearInterval(timer));
         </div>
       </PanelCard>
 
-      <PanelCard v-if="gc" title="Garbage collection"
-                 :aside="gc.usingNotifications ? 'JMX notifications' : 'polled'">
+      <PanelCard v-if="gc" :title="t('diag.gc')"
+                 :aside="gc.usingNotifications ? t('diag.gcNotifications') : t('diag.gcPolled')">
         <div class="table-wrap">
           <table>
             <tbody>
-              <tr><td>Collections</td><td class="right num">{{ gc.totalCount }}</td></tr>
-              <tr><td>Total pause</td><td class="right num">{{ gc.totalPauseMs }} ms</td></tr>
+              <tr><td>{{ t('diag.collections') }}</td><td class="right num">{{ gc.totalCount }}</td></tr>
               <tr>
-                <td>Worst recent</td>
+                <td>{{ t('diag.totalPause') }}</td>
+                <td class="right num">{{ gc.totalPauseMs }} ms</td>
+              </tr>
+              <tr>
+                <td>{{ t('diag.worstPause') }}</td>
                 <td class="right num">{{ Math.round(gc.worstRecentPauseMs) }} ms</td>
               </tr>
             </tbody>
@@ -163,15 +192,21 @@ onBeforeUnmount(() => clearInterval(timer));
         </div>
       </PanelCard>
 
-      <PanelCard title="Integrations">
+      <PanelCard :title="t('diag.integrations')">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Plugin</th><th>State</th><th>Note</th></tr></thead>
+            <thead>
+              <tr>
+                <th>{{ t('diag.plugin') }}</th>
+                <th>{{ t('alerts.state') }}</th>
+                <th>{{ t('diag.note2') }}</th>
+              </tr>
+            </thead>
             <tbody>
               <tr v-for="entry in integrations" :key="entry.id">
                 <td>{{ entry.name }}</td>
                 <td>
-                  <StatusTag :text="entry.available ? 'connected' : 'absent'"
+                  <StatusTag :text="entry.available ? t('diag.connected') : t('diag.absent')"
                              :tone="entry.available ? 'good' : ''" />
                 </td>
                 <td class="wrap">{{ entry.problem || entry.version }}</td>
@@ -181,16 +216,23 @@ onBeforeUnmount(() => clearInterval(timer));
         </div>
       </PanelCard>
 
-      <PanelCard title="Plugins" :aside="`${system.plugins.length} installed`">
+      <PanelCard :title="t('diag.plugins')"
+                 :aside="t('diag.installed', { count: system.plugins.length })">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Plugin</th><th>Version</th><th>State</th></tr></thead>
+            <thead>
+              <tr>
+                <th>{{ t('diag.plugin') }}</th>
+                <th>{{ t('diag.version') }}</th>
+                <th>{{ t('alerts.state') }}</th>
+              </tr>
+            </thead>
             <tbody>
               <tr v-for="plugin in system.plugins" :key="plugin.name">
                 <td>{{ plugin.name }}</td>
                 <td class="num">{{ plugin.version }}</td>
                 <td>
-                  <StatusTag :text="plugin.enabled ? 'enabled' : 'disabled'"
+                  <StatusTag :text="plugin.enabled ? t('diag.enabled') : t('diag.disabled')"
                              :tone="plugin.enabled ? 'good' : 'warn'" />
                 </td>
               </tr>

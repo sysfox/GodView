@@ -159,15 +159,21 @@ public final class AuthRoutes {
      * {@code /godview user add}" instead of a login form nobody can pass. That is not a
      * useful disclosure: an attacker learns only that the panel is unconfigured, which
      * they would discover on their first attempt anyway.
+     *
+     * <p>It also carries {@code locale}, so the sign-in page comes up in the language the
+     * server operator configured rather than in English until somebody signs in and
+     * changes it. The panel treats that as a default and lets a visitor override it.
      */
     private void state(WebExchange exchange) throws IOException {
         SessionManager.Session session = web.sessions().validate(
                 exchange.cookie(SessionManager.COOKIE));
-        JsonWriter w = new JsonWriter(200);
+        JsonWriter w = new JsonWriter(240);
         w.obj()
                 .field("configured", !web.users().isEmpty())
                 .field("authenticated", session != null)
                 .field("secure", exchange.isSecure())
+                .field("locale", config.get().locale)
+                .field("minPasswordLength", UserStore.MIN_PASSWORD_LENGTH)
                 .field("lockedOut", web.loginGuard().isLocked(exchange.clientIp()));
         if (session != null) {
             w.field("user", session.user()).field("role", session.role().lower());

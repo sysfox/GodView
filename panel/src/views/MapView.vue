@@ -2,6 +2,7 @@
 import { ref, reactive, onMounted, onBeforeUnmount } from 'vue';
 import { api } from '../lib/api.js';
 import { state, on } from '../lib/store.js';
+import { t } from '../lib/i18n.js';
 import EmptyState from '../components/EmptyState.vue';
 
 const canvas = ref(null);
@@ -175,24 +176,27 @@ onBeforeUnmount(() => {
 <template>
   <div class="view">
     <div class="view__head">
-      <h1 class="view__title">Map</h1>
+      <h1 class="view__title">{{ t('map.title') }}</h1>
       <p class="view__note">
-        {{ Math.round(view.x) }}, {{ Math.round(view.z) }} · 1:{{ view.scale }}
+        {{ t('map.position', {
+          x: Math.round(view.x), z: Math.round(view.z), scale: view.scale,
+        }) }}
       </p>
     </div>
 
-    <EmptyState v-if="disabled" title="The map is off">
-      Set <code>map.enabled</code> to true in config.yml and run <code>/godview reload</code>.
-    </EmptyState>
+    <EmptyState v-if="disabled" :title="t('map.off')"
+                :detail="t('map.offDetail', {
+                  key: 'map.enabled', command: '/godview reload',
+                })" />
 
-    <EmptyState v-else-if="failure" title="Could not reach the map" :detail="failure" />
+    <EmptyState v-else-if="failure" :title="t('map.failure')" :detail="failure" />
 
     <template v-else>
       <div class="controls">
-        <select v-model="world" class="input" aria-label="World" @change="changeWorld">
+        <select v-model="world" class="input" :aria-label="t('map.world')" @change="changeWorld">
           <option v-for="name in worlds" :key="name" :value="name">{{ name }}</option>
         </select>
-        <span class="panel__aside">Drag to pan, scroll to zoom</span>
+        <span class="panel__aside">{{ t('map.hint') }}</span>
       </div>
 
       <div ref="frame" class="mapframe"

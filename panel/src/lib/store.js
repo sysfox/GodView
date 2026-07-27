@@ -1,5 +1,6 @@
 import { reactive, computed } from 'vue';
 import { api, setCsrf, onSignedOut, LiveFeed, ApiError } from './api.js';
+import { adoptServerLocale, t } from './i18n.js';
 
 /**
  * One shared store, plain reactive state rather than Pinia.
@@ -19,6 +20,9 @@ export const state = reactive({
   user: null,
   role: null,
   permissions: [],
+  expiresAt: 0,
+  /** Mirrors UserStore.MIN_PASSWORD_LENGTH, so the form refuses what the server would. */
+  minPasswordLength: 8,
 
   link: 'connecting',
   pulse: null,
@@ -75,6 +79,10 @@ export async function bootstrap() {
   try {
     const gate = await api.get('/api/auth/state');
     state.configured = gate.configured;
+    state.minPasswordLength = gate.minPasswordLength ?? state.minPasswordLength;
+    // config.yml's `locale` is the server operator's choice of default; it only
+    // applies until somebody picks a language in the panel itself.
+    adoptServerLocale(gate.locale);
     if (gate.authenticated) {
       await adopt(await api.get('/api/auth/me'));
     }
@@ -95,8 +103,18 @@ async function adopt(session) {
   state.user = session.user;
   state.role = session.role;
   state.permissions = session.permissions ?? [];
+  state.expiresAt = session.expiresAt ?? 0;
   state.signedIn = true;
   await primeAndConnect();
+}
+
+/** Re-reads the session after something changed it, such as a password change. */
+export async function refreshSession() {
+  const session = await api.get('/api/auth/me');
+  setCsrf(session.csrf);
+  state.role = session.role;
+  state.permissions = session.permissions ?? [];
+  state.expiresAt = session.expiresAt ?? 0;
 }
 
 export async function signOut() {
@@ -116,6 +134,7 @@ function teardown() {
   state.user = null;
   state.role = null;
   state.permissions = [];
+  state.expiresAt = 0;
   state.pulse = null;
   state.snapshot = null;
   state.ticks = [];
@@ -125,7 +144,7 @@ function teardown() {
 onSignedOut(() => {
   if (state.signedIn) {
     teardown();
-    toast('Your session ended. Sign in again.', 'bad');
+    toast(t('toast.sessionEnded'), 'bad');
   }
 });
 

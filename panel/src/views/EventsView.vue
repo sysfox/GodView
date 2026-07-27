@@ -2,7 +2,8 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { api } from '../lib/api.js';
 import { on } from '../lib/store.js';
-import { stamp, eventTone } from '../lib/format.js';
+import { t } from '../lib/i18n.js';
+import { stamp, eventTone, eventLabel } from '../lib/format.js';
 import PanelCard from '../components/PanelCard.vue';
 import StatusTag from '../components/StatusTag.vue';
 import EmptyState from '../components/EmptyState.vue';
@@ -47,34 +48,40 @@ onBeforeUnmount(() => off?.());
 <template>
   <div class="view">
     <div class="view__head">
-      <h1 class="view__title">Events</h1>
-      <p class="view__note">Everything the server recorded, newest first.</p>
+      <h1 class="view__title">{{ t('events.title') }}</h1>
+      <p class="view__note">{{ t('events.note') }}</p>
     </div>
 
     <form class="controls" @submit.prevent="load">
-      <select v-model="type" class="input" aria-label="Event type">
-        <option value="">All events</option>
+      <select v-model="type" class="input" :aria-label="t('events.type')">
+        <option value="">{{ t('events.all') }}</option>
         <option v-for="value in TYPES" :key="value" :value="value">
-          {{ value.replace(/_/g, ' ') }}
+          {{ eventLabel(value) }}
         </option>
       </select>
-      <input v-model="actor" class="input" placeholder="Player" style="min-width:9rem">
-      <input v-model="search" class="input" placeholder="Search text" style="min-width:12rem">
-      <button class="btn" type="submit">Search</button>
+      <input v-model="actor" class="input" :placeholder="t('events.player')" style="min-width:9rem">
+      <input v-model="search" class="input" :placeholder="t('events.searchText')"
+             style="min-width:12rem">
+      <button class="btn" type="submit">{{ t('events.search') }}</button>
     </form>
 
-    <EmptyState v-if="failure" title="Could not load events" :detail="failure" />
+    <EmptyState v-if="failure" :title="t('events.failure')" :detail="failure" />
 
-    <PanelCard v-else-if="events.length" :title="`${events.length} events`">
+    <PanelCard v-else-if="events.length" :title="t('events.count', { count: events.length })">
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>When</th><th>Type</th><th>Who</th><th>Detail</th></tr>
+            <tr>
+              <th>{{ t('events.when') }}</th>
+              <th>{{ t('events.typeCol') }}</th>
+              <th>{{ t('events.who') }}</th>
+              <th>{{ t('events.detail') }}</th>
+            </tr>
           </thead>
           <tbody>
             <tr v-for="(event, index) in events" :key="`${event.at}-${index}`">
               <td class="num">{{ stamp(event.at) }}</td>
-              <td><StatusTag :text="event.type" :tone="eventTone(event.type)" /></td>
+              <td><StatusTag :text="eventLabel(event.type)" :tone="eventTone(event.type)" /></td>
               <td>{{ event.actor ?? '--' }}</td>
               <td class="wrap">{{ event.detail }}</td>
             </tr>
@@ -83,7 +90,6 @@ onBeforeUnmount(() => off?.());
       </div>
     </PanelCard>
 
-    <EmptyState v-else title="Nothing matched"
-                detail="Events are kept for as long as storage.retention.events-days allows." />
+    <EmptyState v-else :title="t('events.nothing')" :detail="t('events.nothingDetail')" />
   </div>
 </template>

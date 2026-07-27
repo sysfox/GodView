@@ -132,6 +132,41 @@ button { font: inherit; }
 
 .field__input:focus { border-color: var(--lapis); outline: none; }
 
+.field__hint { display: block; margin-top: .3rem; font-size: .75rem; color: var(--dim); }
+
+/* The switcher on the sign-in card is two words, not a select: somebody who
+   cannot read the page yet should not have to open a menu to fix that. */
+.gate__lang { display: flex; justify-content: center; gap: .25rem; margin-top: 1.25rem; }
+
+.langpick {
+  padding: .2rem .5rem;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--dim);
+  font: inherit;
+  font-size: .75rem;
+  cursor: pointer;
+}
+
+.langpick:hover { color: var(--calcite); }
+.langpick.is-active { color: var(--calcite); border-color: var(--vein); background: var(--tuff); }
+
+.langswitch {
+  padding: .2rem .35rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--ash);
+  font: inherit;
+  font-size: .75rem;
+  cursor: pointer;
+}
+
+.langswitch:hover { border-color: var(--vein); color: var(--calcite); }
+.langswitch:focus { border-color: var(--lapis); outline: none; }
+.langswitch option { background: var(--deepslate); color: var(--calcite); }
+
 /* ---------------------------------------------------------------- shell --- */
 
 .shell {
