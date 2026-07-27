@@ -8,6 +8,7 @@ import AppIcon from './components/AppIcon.vue';
 
 const views = computed(() => [
   { path: '/live', name: t('nav.live'), icon: 'live' },
+  { path: '/metrics', name: t('nav.metrics'), icon: 'metrics' },
   { path: '/players', name: t('nav.players'), icon: 'players' },
   { path: '/console', name: t('nav.console'), icon: 'console' },
   { path: '/events', name: t('nav.events'), icon: 'events' },

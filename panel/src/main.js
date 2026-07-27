@@ -4,6 +4,7 @@ import App from './App.vue';
 import './styles/app.css';
 
 import LiveView from './views/LiveView.vue';
+import MetricsView from './views/MetricsView.vue';
 import PlayersView from './views/PlayersView.vue';
 import ConsoleView from './views/ConsoleView.vue';
 import EventsView from './views/EventsView.vue';
@@ -17,13 +18,14 @@ import DiagnosticsView from './views/DiagnosticsView.vue';
  * History mode would need the server to serve index.html for every unknown
  * path, which it does -- but the panel is one file inside a jar behind whatever
  * reverse proxy an operator happens to run, and a hash needs nothing from any
- * of them. Deep links are not the point here; the seven views are.
+ * of them. Deep links are not the point here; the views are.
  */
 const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', redirect: '/live' },
     { path: '/live', component: LiveView },
+    { path: '/metrics', component: MetricsView },
     { path: '/players', component: PlayersView },
     { path: '/console', component: ConsoleView },
     { path: '/events', component: EventsView },
